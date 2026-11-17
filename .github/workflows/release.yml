@@ -1,0 +1,152 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: windows-x64
+            archive: zip
+          - os: macos-latest
+            artifact: macos-arm64
+            archive: zip
+          - os: ubuntu-latest
+            artifact: linux-x64
+            archive: tar
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Linux deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libxkbcommon-dev libssl-dev libasound2-dev
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: compressspeak-rs
+
+      - name: Build release
+        working-directory: compressspeak-rs
+        run: cargo build --release -p compressspeak
+
+      - name: Fetch FFmpeg (Windows)
+        if: runner.os == 'Windows'
+        working-directory: compressspeak-rs
+        shell: pwsh
+        run: |
+          if (Test-Path scripts/fetch-ffmpeg.ps1) {
+            & ./scripts/fetch-ffmpeg.ps1
+          }
+
+      - name: Pack Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $name = "compressspeak-$tag-${{ matrix.artifact }}"
+          $dir = "pack/$name"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          Copy-Item compressspeak-rs/target/release/compressspeak.exe $dir/
+          $ff = "compressspeak-rs/vendor/ffmpeg/windows/ffmpeg.exe"
+          if (Test-Path $ff) {
+            New-Item -ItemType Directory -Force -Path "$dir/vendor/ffmpeg/windows" | Out-Null
+            Copy-Item $ff "$dir/vendor/ffmpeg/windows/"
+            $probe = "compressspeak-rs/vendor/ffmpeg/windows/ffprobe.exe"
+            if (Test-Path $probe) { Copy-Item $probe "$dir/vendor/ffmpeg/windows/" }
+          }
+          @(
+            "CompressSpeak $tag (Windows x64)",
+            "Run compressspeak.exe from this folder.",
+            "FFmpeg is under vendor/ffmpeg/windows when bundled."
+          ) | Set-Content -Encoding utf8 "$dir/README-run.txt"
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path "$dir/*" -DestinationPath "dist/$name.zip" -Force
+
+      - name: Pack macOS
+        if: runner.os == 'macOS'
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          NAME="compressspeak-${TAG}-${{ matrix.artifact }}"
+          mkdir -p "pack/${NAME}"
+          cp compressspeak-rs/target/release/compressspeak "pack/${NAME}/"
+          chmod +x "pack/${NAME}/compressspeak"
+          cat > "pack/${NAME}/README-run.txt" <<EOF
+          CompressSpeak ${TAG} (macOS)
+          Run ./compressspeak from this folder.
+          Install FFmpeg on the system (e.g. brew install ffmpeg).
+          EOF
+          mkdir -p dist
+          (cd pack && zip -r "../dist/${NAME}.zip" "${NAME}")
+
+      - name: Pack Linux
+        if: runner.os == 'Linux'
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          NAME="compressspeak-${TAG}-${{ matrix.artifact }}"
+          mkdir -p "pack/${NAME}"
+          cp compressspeak-rs/target/release/compressspeak "pack/${NAME}/"
+          chmod +x "pack/${NAME}/compressspeak"
+          cat > "pack/${NAME}/README-run.txt" <<EOF
+          CompressSpeak ${TAG} (Linux x64)
+          Run ./compressspeak from this folder.
+          Install FFmpeg via your package manager (e.g. apt install ffmpeg).
+          UI deps: libxcb, libxkbcommon, libasound2 (see README).
+          EOF
+          mkdir -p dist
+          tar -C pack -czf "dist/${NAME}.tar.gz" "${NAME}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: compressspeak-${{ matrix.artifact }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: List assets
+        run: find release-assets -type f -print
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: CompressSpeak ${{ github.ref_name }}
+          body_path: compressspeak-release-notes.md
+          generate_release_notes: true
+          fail_on_unmatched_files: false
+          files: |
+            release-assets/*.zip
+            release-assets/*.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
