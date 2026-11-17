@@ -1,4 +1,4 @@
-# Python
+# Python (archive/python et environnements locaux)
 __pycache__/
 *.py[cod]
 *$py.class
@@ -8,6 +8,8 @@ __pycache__/
 venv/
 ENV/
 env/
+archive/python/.venv/
+archive/python/__pycache__/
 build/
 develop-eggs/
 dist/
@@ -35,7 +37,7 @@ wheels/
 *~
 .DS_Store
 
-# Application
+# Application / mÃ©dias gÃ©nÃ©rÃ©s
 *.opus
 *.flac
 *.wav
@@ -45,6 +47,8 @@ wheels/
 *.txt
 !requirements.txt
 !README.md
+!archive/python/README.md
+!archive/python/requirements.txt
 *.srt
 *.vtt
 onnxrt_status.txt
@@ -52,7 +56,7 @@ onnxrt_status.txt
 # Logs
 *.log
 
-# Models (UVR5)
+# Models (UVR5 / ONNX locaux)
 models/
 *.ckpt
 *.pth
@@ -62,3 +66,15 @@ models/
 temp/
 tmp/
 .cache/
+
+# Rust
+compressspeak-rs/target/
+compressspeak-rs/vendor/ffmpeg/**/ffmpeg
+compressspeak-rs/vendor/ffmpeg/**/ffmpeg.exe
+compressspeak-rs/vendor/ffmpeg/**/ffprobe
+compressspeak-rs/vendor/ffmpeg/**/ffprobe.exe
+build.ps1
+deploy.ps1
+release.ps1
+old/
+archive/

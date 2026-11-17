@@ -1,0 +1,21 @@
+[package]
+name = "cs-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+directories = { workspace = true }
+confy = { workspace = true }
+tracing = { workspace = true }
+crossbeam-channel = { workspace = true }
+cs-ffmpeg = { workspace = true }
+cs-warmth = { workspace = true }
+cs-dpdf = { workspace = true }
+cs-whisper = { workspace = true }
+cs-uvr5 = { workspace = true }
+tempfile = { workspace = true }

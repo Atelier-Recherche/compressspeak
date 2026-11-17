@@ -1,344 +1,217 @@
-# Compress Speak
+<div align="center" id="head">
 
-**Compress Speak** est une application de compression et traitement audio pour la voix, optimisée pour créer des fichiers Opus légers avec transcription automatique.
 
-## 🎯 Fonctionnalités
+<table>
+<tr>
+<td><img src="readme-media/logo_compressspeak.png" alt="CompressSpeak" width="140" /></td>
+<td align="left">
+<h1 style="margin:0">CompressSpeak</h1>
+<p style="margin:0.25em 0 0"><strong>Compression Opus · isolation vocale · transcription Whisper</strong></p>
+</td>
+</tr>
+</table>
 
-- **Compression Opus** intelligente avec réduction de bruit (afftdn) et compression dynamique
-- **Isolation vocale** (UVR5/audio-separator) avec accélération GPU AMD/Intel (DirectML)
-- **Chaleur vocale** (Pedalboard) : ajoute harmoniques et corps à la voix extraite
-- **Transcription automatique** (Vibe/Whisper) en français, anglais, allemand, espagnol, etc.
-- **Traitement par lots** avec file d'attente
-- **Lecteur audio** intégré avec aperçu 5 secondes
-- **Interface moderne** : thèmes sombre/clair, multilingue (fr/en/de/es)
+<a href="https://atelier.atechnologie.fr/" title="l'Atelier – Association de fabrication de livres et d'outils de recherche"><img src="https://raw.githubusercontent.com/Atelier-Recherche/.github/main/profile/logo.jpg" alt="l'Atelier" width="200" /></a>  
+<sub>Développé par <a href="https://atelier.atechnologie.fr/">l'Atelier</a> — fabrication de livres et outils de recherche (EHESS)</sub>
 
----
+<p>
+🇫🇷 <a href="README.md"><b>Français</b></a> ·
+🇬🇧 <a href="README.en.md">English</a> ·
+🇩🇪 <a href="README.de.md">Deutsch</a> ·
+🇪🇸 <a href="README.es.md">Español</a>
+</p>
 
-## 📦 Installation rapide (Windows)
+<p>
+<a href="https://atelier.atechnologie.fr/"><img src="https://img.shields.io/badge/🌐_l'Atelier-atelier.atechnologie.fr-2d5016?style=for-the-badge" alt="Site l'Atelier" /></a>
+<a href="https://github.com/Atelier-Recherche/compressspeak"><img src="https://img.shields.io/badge/📦_Dépôt-GitHub-181717?style=for-the-badge&logo=github" alt="Dépôt GitHub" /></a>
+</p>
 
-### Prérequis
-- **Windows 10/11**
-- **Python 3.10+** ([télécharger ici](https://www.python.org/downloads/))
-- **FFmpeg** ([télécharger ici](https://ffmpeg.org/download.html) ou installer via `winget install ffmpeg`)
-- **GPU AMD ou Intel** (optionnel, pour accélération UVR5)
-
-### Installation automatique
-
-1. **Cloner ou télécharger** le dépôt :
-   ```powershell
-   git clone https://github.com/votre-repo/compressspeak.git
-   cd compressspeak
-   ```
-
-2. **Exécuter le script d'installation** :
-   ```powershell
-   .\install.ps1
-   ```
-   
-   Le script va :
-   - Créer un environnement virtuel Python
-   - Installer les dépendances de base (PyQt6, Pedalboard)
-   - Proposer d'installer **audio-separator** (UVR5) avec DirectML
-   - Proposer d'installer **Vibe** (transcription Whisper offline)
-
-3. **Lancer l'application** :
-   ```powershell
-   .\run.ps1
-   ```
+</div>
 
 ---
 
-## 🔧 Installation manuelle
+## Aperçu
 
-### 1. Environnement Python
+| Interface | Traitement |
+| :---: | :---: |
+| <img src="readme-media/screen1.jpg" alt="CompressSpeak interface" width="400" /> | <img src="readme-media/screen2.jpg" alt="CompressSpeak traitement" width="400" /> |
 
-```powershell
-# Créer un environnement virtuel
-python -m venv .venv
+---
 
-# Activer l'environnement
-.\.venv\Scripts\Activate.ps1
+## À propos
 
-# Installer les dépendances de base
-pip install -r requirements.txt
-```
+**CompressSpeak** est une application multiplateforme (Windows / macOS / Linux) de compression et traitement audio pour la voix, écrite en **Rust** (egui). Elle produit des fichiers Opus légers avec nettoyage, mixage et transcription optionnelle.
 
-### 2. audio-separator (Isolation vocale UVR5)
+## Fonctionnalités
 
-**Pour GPU AMD/Intel (DirectML) :**
-```powershell
-pip install audio-separator[gpu]
-pip install onnxruntime-directml
-pip install torch-directml
-```
+- **Compression Opus** via FFmpeg (réduction de bruit afftdn + compresseur dynamique)
+- **Isolation vocale** optionnelle (UVR5 / `audio-separator`, CLI externe)
+- **Nettoyage DPDF** embarqué (DPDFNet / ONNX Runtime)
+- **Mixage** embarqué (DSP Rust : chaleur + désourdage après DPDF)
+- **Transcription** via `whisper-cli` (modèles ggml)
+- **File d’attente** par lots, lecteur intégré, aperçu 5 s
+- **Thèmes** sombre / clair / système, **i18n** fr / en / de / es
 
-**Pour CPU uniquement :**
-```powershell
-pip install audio-separator
-```
+---
 
-**Vérification :**
-```powershell
-audio-separator --help
-```
+## Prérequis
 
-### 3. Vibe (Transcription Whisper)
+- **Rust** stable (1.85+)
+- **FFmpeg** dans le `PATH`, ou embarqué via les scripts `fetch-ffmpeg`
+- Optionnel : [`audio-separator`](https://github.com/nomadkaraoke/python-audio-separator) (UVR5), [`whisper-cli`](https://github.com/ggerganov/whisper.cpp) (transcription)
 
-**Option A : Installer Vibe officiel**
-```powershell
-pip install vibe-whisper
-```
+### Linux (dépendances UI)
 
-**Option B : Utiliser sona.exe (alternative plus rapide)**
-
-1. Télécharger [sona.exe](https://github.com/thewh1teagle/vibe/releases) depuis les releases GitHub
-2. Placer `sona.exe` dans le dossier `compressspeak/` ou dans votre PATH
-3. L'application détectera automatiquement `sona.exe`
-
-**Vérification :**
-```powershell
-# Pour Vibe
-vibe --help
-
-# Pour sona
-.\sona.exe --help
+```bash
+sudo apt-get install libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+  libxkbcommon-dev libssl-dev libasound2-dev
 ```
 
 ---
 
-## 🚀 Utilisation
+## Installation et lancement
 
-### Lancement
-```powershell
-# Avec le script
-.\run.ps1
-
-# Ou directement
-.\.venv\Scripts\Activate.ps1
-python app.py
+```bash
+git clone https://github.com/Atelier-Recherche/compressspeak.git
+cd compressspeak/compressspeak-rs
+cargo run -p compressspeak
 ```
 
-### Workflow de base
+Build release :
 
-1. **Ajouter des fichiers** : Glissez-déposez des fichiers audio ou cliquez sur "Ajouter des fichiers…"
-2. **Ajuster le gain** : Modifier le gain (en dB) pour chaque fichier
-3. **Choisir le dossier de sortie** (optionnel) : Par défaut, les fichiers sont créés à côté des sources
-4. **Convertir** : Cliquez sur "Convertir en Opus"
+```bash
+cargo build --release -p compressspeak
+# binaire : target/release/compressspeak[.exe]
+```
 
-### Options avancées
+### Embarquer FFmpeg
 
-#### 🎤 Isolation vocale (UVR5)
-- Cochez **"Isoler voix"** sur chaque fichier pour extraire uniquement la voix
-- Configure dans **Paramètres → Configurer UVR5…** :
-  - Chemin d'installation UVR5 (laissez vide pour utiliser `audio-separator`)
-  - GPU DirectML (sélectionnez votre carte graphique dédiée)
-  - Stem à extraire (Vocals, Instrumental, Drums, etc.)
-  - Chunk duration (20 min par défaut pour éviter découpage inutile)
+```powershell
+# Windows
+.\scripts\fetch-ffmpeg.ps1
+```
 
-#### 🔥 Chaleur vocale (Warmth)
-- Cochez **"Réchauffer la voix"** pour ajouter harmoniques et corps après l'extraction
-- Configure dans **Paramètres → Chaleur vocale (Pedalboard)…** :
-  - **Presets disponibles** : Subtil, Standard, Radio (Punchy), Podcast (Naturel)
-  - **HighShelfFilter** : Gain et fréquence de coupure (ajoute du corps)
-  - **Distortion** : Drive (génère des harmoniques chauds)
-  - **Compressor** : Seuil et ratio (lisse la dynamique)
-  - **Gain final** : Compensation de volume
-
-#### 💾 Conserver FLAC
-- Cochez **"Conserver le fichier FLAC"** pour garder une version lossless de la voix isolée
-- Utile pour retraiter ultérieurement sans repasser par UVR5
-
-#### ✍️ Transcription (Vibe)
-- Cochez **"Transcrire"** sur chaque fichier pour générer un fichier texte de transcription
-- Configure dans **Paramètres → Configurer Vibe…** :
-  - Chemin de `vibe` ou `sona.exe` (auto-détecté si dans le PATH)
-  - Modèle Whisper (tiny, base, small, medium, large)
-  - Langue (auto, french, english, etc.)
-  - Format de sortie (txt, srt, vtt)
-
-#### ⚙️ Paramètres de conversion
-Configure dans **Paramètres → Paramètres de conversion (Opus)…** :
-- **Presets disponibles** :
-  - **Audiobook** : Qualité max (32k, compression douce)
-  - **Podcast** : Standard (20k, équilibré) - *par défaut*
-  - **Voice Chat** : Léger (16k, compression modérée)
-  - **Note vocale** : Ultra-léger (12k, compression agressive)
-- **Paramètres personnalisables** :
-  - Réduction de bruit (afftdn)
-  - Compresseur (seuil, ratio, attack, release)
-  - Bitrate Opus (conversion + aperçu)
+```bash
+# macOS / Linux (copie depuis le PATH)
+./scripts/fetch-ffmpeg.sh
+```
 
 ---
 
-## 📁 Structure du projet
+## Utilisation
+
+1. **Ajouter des fichiers** : glisser-déposer ou bouton d’ajout
+2. **Gain** : ajuster le dB par ligne
+3. **Options par fichier** (ordre de tâche) : Isoler → Transcrire → Mixage → Nettoyer
+4. **Sortie** : suffixe, dossier (sinon à côté des sources), conserver FLAC si isolation
+5. **Convertir en Opus** / **Tout traiter** / **Transcrire** ; barre de progression en bas
+
+### Paramètres
+
+- **Conversion Opus** : presets Audiobook / Podcast / Voice Chat / Note vocale
+- **Mixage** : presets + désourdage optionnel (après DPDF)
+- **DPDF** : sample rate + modèle (Baseline / DPDFNet2 / 4 / 8)
+- **Whisper** : chemin CLI, modèle, langue, format (txt / srt / vtt)
+- **UVR5** : chemin CLI / modèle (sinon « Isoler » reste désactivé)
+- **Journal** : masqué par défaut, activable dans Paramètres
+
+---
+
+## Structure du dépôt
 
 ```
 compressspeak/
-├── app.py                  # Point d'entrée
-├── main_window.py          # Interface principale
-├── config.py               # Configuration et constantes
-├── i18n.py                 # Traductions (fr/en/de/es)
-├── ffmpeg.py               # Wrapper FFmpeg
-├── uvr5.py                 # Intégration UVR5/audio-separator
-├── uvr5_worker.py          # Worker process pour UVR5 (DirectML)
-├── warmth.py               # Effets de chaleur vocale (Pedalboard)
-├── vibe.py                 # Intégration Vibe/Whisper
-├── widgets.py              # Widgets PyQt6 personnalisés
-├── theme.py                # Gestion des thèmes
-├── requirements.txt        # Dépendances Python
-├── install.ps1             # Script d'installation Windows
-├── run.ps1                 # Script de lancement
-└── README.md               # Ce fichier
+├── compressspeak-rs/          # Application Rust (egui)
+│   ├── crates/compressspeak   # UI
+│   ├── crates/cs-core         # config, i18n, pipeline
+│   ├── crates/cs-ffmpeg
+│   ├── crates/cs-warmth       # Mixage DSP
+│   ├── crates/cs-dpdf         # DPDF / DPDFNet
+│   ├── crates/cs-whisper
+│   ├── crates/cs-uvr5
+│   ├── assets/i18n
+│   ├── scripts/               # fetch-ffmpeg
+│   └── vendor/ffmpeg
+├── archive/python/            # Ancienne version PyQt6 (archivée)
+├── readme-media/
+└── README.md
 ```
 
 ---
 
-## 🎛️ Configuration avancée
+## Whisper
 
-### DirectML (GPU AMD/Intel)
+1. Installer [whisper.cpp](https://github.com/ggerganov/whisper.cpp) / `whisper-cli`
+2. Paramètres → Transcription Whisper… → chemin CLI + modèle
+3. Les modèles `ggml-*.bin` sont téléchargés dans le dossier data de l’app
 
-Pour forcer l'utilisation de votre carte graphique dédiée :
+## UVR5
 
-1. Ouvrir **Paramètres → Configurer UVR5…**
-2. Dans **"GPU DirectML"**, sélectionner votre carte (ex: "AMD Radeon RX 6750 XT")
-3. Laisser "-1 (auto)" utilisera le GPU intégré par défaut
-
-### Modèles UVR5
-
-Les modèles sont téléchargés automatiquement par `audio-separator`. Pour utiliser un modèle local :
-
-1. Télécharger les modèles depuis [UVR5 GUI](https://github.com/Anjok07/ultimatevocalremovergui/releases)
-2. Placer dans `C:\Users\<USER>\AppData\Local\Programs\Ultimate Vocal Remover\models\MDX_Net_Models\`
-3. Spécifier le nom du modèle dans **Paramètres → Configurer UVR5… → Nom du modèle**
-
-Modèles recommandés :
-- **MDX23C-8KFFT-InstVoc_HQ.ckpt** (par défaut, qualité maximale)
-- **UVR-MDX-NET-Inst_HQ_3.onnx** (plus rapide)
-
-### Personnaliser la chaleur vocale
-
-Les paramètres Warmth sont stockés dans `QSettings`. Pour modifier :
-
-```python
-from PyQt6.QtCore import QSettings
-settings = QSettings("compressspeak", "compressspeak")
-
-settings.setValue("warmth_high_shelf_gain", 3.0)        # Gain (dB)
-settings.setValue("warmth_high_shelf_cutoff", 350.0)   # Fréquence (Hz)
-settings.setValue("warmth_distortion_drive", 4.0)      # Drive (dB)
-settings.setValue("warmth_compressor_threshold", -18.0) # Seuil (dB)
-settings.setValue("warmth_compressor_ratio", 4.0)      # Ratio
-settings.setValue("warmth_final_gain", 3.0)            # Gain final (dB)
-```
+Non embarqué. Installez `audio-separator` et indiquez le chemin dans Paramètres → UVR5.
 
 ---
 
-## 🐛 Dépannage
+## Dépannage
 
 ### FFmpeg introuvable
-**Erreur** : `FFmpeg introuvable`
 
-**Solution** :
-```powershell
-# Vérifier l'installation
-ffmpeg -version
+Installez FFmpeg (`winget install ffmpeg` sous Windows) ou lancez `scripts/fetch-ffmpeg` dans `compressspeak-rs/`.
 
-# Installer via winget (Windows 10+)
-winget install ffmpeg
+### Isolation désactivée
 
-# Ou ajouter FFmpeg au PATH manuellement
-```
+UVR5 / `audio-separator` non détecté : installez le CLI et configurez le chemin dans Paramètres.
 
-### DirectML non détecté
-**Erreur** : `No hardware acceleration could be configured`
+### Transcription
 
-**Solutions** :
-1. Vérifier les drivers GPU AMD/Intel à jour
-2. Réinstaller `onnxruntime-directml` et `torch-directml` :
-   ```powershell
-   pip uninstall onnxruntime-directml torch-directml
-   pip install onnxruntime-directml torch-directml
-   ```
-3. Vérifier l'adaptateur DirectML :
-   ```powershell
-   python -c "import onnxruntime; print(onnxruntime.get_available_providers())"
-   # Doit afficher: ['DmlExecutionProvider', 'CPUExecutionProvider']
-   ```
-
-### GPU intégré utilisé au lieu de la carte dédiée
-**Problème** : Le GPU intégré (adapter 0) est utilisé au lieu de la RX 6750 XT (adapter 1)
-
-**Solution** :
-1. **Paramètres → Configurer UVR5…**
-2. Sélectionner **"1: AMD Radeon RX 6750 XT"** dans le menu déroulant "GPU DirectML"
-3. Cliquer OK
-
-### Vibe/sona introuvable
-**Erreur** : `Vibe non installé`
-
-**Solution** :
-1. Installer Vibe : `pip install vibe-whisper`
-2. Ou télécharger `sona.exe` et spécifier le chemin dans **Paramètres → Configurer Vibe…**
-
-### UI freeze pendant le traitement
-**Problème** : L'interface se fige pendant UVR5
-
-**Solution** : Ce problème a été corrigé dans les versions récentes. UVR5 tourne maintenant dans un processus séparé (`uvr5_worker.py`). Si le problème persiste :
-- Mettre à jour vers la dernière version
-- Vérifier que `uvr5_worker.py` est présent dans le dossier
-
-### Chunking bloqué sur fichiers de 15 min
-**Problème** : Le traitement semble bloqué sur "File duration 900.0s exceeds chunk size"
-
-**Solution** : Augmenter `chunk_duration` dans **Paramètres → Configurer UVR5…** à **1200 secondes** (20 min). La migration est automatique depuis les versions récentes.
+Vérifiez que `whisper-cli` est accessible et que le modèle est sélectionné dans Paramètres.
 
 ---
 
-## 🌍 Contribuer
+## Contribuer
 
-Les contributions sont les bienvenues ! Pour ajouter une fonctionnalité ou corriger un bug :
+1. Fork
+2. Branche : `git checkout -b feature/ma-feature`
+3. Commit / push / Pull Request
 
-1. Fork le projet
-2. Créer une branche : `git checkout -b feature/ma-feature`
-3. Commit : `git commit -m "Ajoute ma feature"`
-4. Push : `git push origin feature/ma-feature`
-5. Ouvrir une Pull Request
-
-### Ajouter une traduction
-
-Les traductions sont dans `i18n.py`. Pour ajouter une langue :
-
-```python
-TRANSLATIONS: dict[str, dict[str, str]] = {
-    "app.title": {
-        "fr": "Compress Speak",
-        "en": "Compress Speak",
-        "de": "Compress Speak",
-        "es": "Compress Speak",
-        "pt": "Compress Speak",  # Nouvelle langue
-    },
-    # ... autres clés
-}
-```
+Les chaînes UI sont dans `compressspeak-rs/assets/i18n/strings.json`.
 
 ---
 
-## 📄 Licence
+## Licence
 
 [À définir]
 
 ---
 
-## 🙏 Remerciements
+## Remerciements
 
-- **audio-separator** : [karaokenerds/python-audio-separator](https://github.com/karaokenerds/python-audio-separator)
-- **UVR5** : [Anjok07/ultimatevocalremovergui](https://github.com/Anjok07/ultimatevocalremovergui)
-- **Vibe** : [thewh1teagle/vibe](https://github.com/thewh1teagle/vibe)
-- **Pedalboard** : [spotify/pedalboard](https://github.com/spotify/pedalboard)
-- **PyQt6** : [Riverbank Computing](https://www.riverbankcomputing.com/software/pyqt/)
+- **FFmpeg** — compression Opus
+- **egui / eframe** — interface
+- **ONNX Runtime** / **Ceva DPDFNet** — nettoyage
+- **whisper.cpp** — transcription
+- **audio-separator** / **UVR5** — isolation vocale (optionnel)
 
 ---
 
-## 📧 Contact
+## Contact
 
-Pour toute question ou suggestion, ouvrez une issue sur GitHub.
+Ouvrez une issue sur GitHub.
+
+---
+
+## Ressources
+
+| | |
+| --- | --- |
+| **l'Atelier** | [atelier.atechnologie.fr](https://atelier.atechnologie.fr/) |
+| **Dépôt** | [github.com/Atelier-Recherche/compressspeak](https://github.com/Atelier-Recherche/compressspeak) |
+
+L’ancienne version Python (PyQt6) est conservée dans [`archive/python/`](archive/python/) pour référence historique ; elle n’est plus maintenue.
+
+---
+
+<div align="center">
+
+<sub>🇫🇷 <a href="README.md">Français</a> · <a href="README.en.md">🇬🇧 English</a> · <a href="README.de.md">🇩🇪 Deutsch</a> · <a href="README.es.md">🇪🇸 Español</a> · CompressSpeak — <a href="https://atelier.atechnologie.fr/">l'Atelier</a></sub>
+
+</div>

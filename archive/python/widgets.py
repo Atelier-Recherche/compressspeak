@@ -194,12 +194,23 @@ class AudioPlayer(QtWidgets.QWidget):
         self.media_player.durationChanged.connect(self._update_duration_and_slider)
         self.position_slider.sliderMoved.connect(self.media_player.setPosition)
 
-    def set_media(self, path: Path):
+    def set_media(self, path: Path | None):
+        if path is None:
+            self.clear_media()
+            return
         media_url = QtCore.QUrl.fromLocalFile(str(path))
         self.media_player.setSource(media_url)
         self.info_label.setText(path.name)
         self.position_slider.setEnabled(True)
         self._update_time_label(self.media_player.position())
+
+    def clear_media(self):
+        """Libère le média chargé (et le fichier sous-jacent) pour éviter de le garder verrouillé."""
+        self.media_player.setSource(QtCore.QUrl())
+        self.info_label.setText(self._str_no_file)
+        self.position_slider.setEnabled(False)
+        self.position_slider.setRange(0, 0)
+        self._update_time_label(0)
 
     def set_gain_db(self, gain_db: int):
         self._gain_db = gain_db

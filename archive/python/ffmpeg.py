@@ -30,7 +30,7 @@ def _default_conversion_params() -> dict[str, Any]:
 
 
 def build_af_filter(gain_db: int, params: dict[str, Any] | None = None) -> str:
-    """Construit la chaîne -af pour FFmpeg (afftdn + volume + acompressor)."""
+    """Construit la chaîne -af pour FFmpeg (afftdn optionnel + volume + acompressor)."""
     p = _default_conversion_params()
     if params:
         p.update(params)
@@ -39,10 +39,15 @@ def build_af_filter(gain_db: int, params: dict[str, Any] | None = None) -> str:
     ratio = p.get("comp_ratio", DEFAULT_COMP_RATIO)
     attack = p.get("comp_attack_ms", DEFAULT_COMP_ATTACK_MS)
     release = p.get("comp_release_ms", DEFAULT_COMP_RELEASE_MS)
-    return (
-        f"afftdn=nf={nf},volume={gain_db}dB,"
+    skip_afftdn = bool(p.get("skip_afftdn", False))
+    tail = (
+        f"volume={gain_db}dB,"
         f"acompressor=threshold={th}dB:ratio={ratio}:attack={attack}:release={release}"
     )
+    if skip_afftdn:
+        return tail
+    return f"afftdn=nf={nf},{tail}"
+
 
 
 def ffmpeg_available() -> bool:
@@ -52,6 +57,22 @@ def ffmpeg_available() -> bool:
         return True
     except (subprocess.CalledProcessError, FileNotFoundError):
         return False
+
+
+def build_m4a_to_wav_command(input_path: Path, output_wav_path: Path) -> list[str]:
+    """Construit la commande FFmpeg pour convertir un fichier audio (m4a, mp4, etc.) en WAV.
+    Utilisé avant UVR5 pour éviter un bug d'audio-separator qui encode en m4a vers un fichier
+    temporaire sans extension, ce qui fait échouer le muxer FFmpeg."""
+    return [
+        FFMPEG_CMD,
+        "-y",
+        "-i",
+        str(input_path),
+        "-vn",
+        "-acodec",
+        "pcm_s16le",
+        str(output_wav_path),
+    ]
 
 
 def build_convert_command(

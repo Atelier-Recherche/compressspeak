@@ -62,6 +62,11 @@ UVR5_MDX_BATCH_SIZE_DEFAULT = 1
 
 AUDIO_EXTENSIONS = {".wav", ".mp3", ".flac", ".aac", ".ogg", ".opus", ".m4a", ".mp4"}
 
+# Formulaire principal (options conservées au redémarrage)
+SETTINGS_FORM_CLEAN_SUFFIX = "form_clean_suffix"
+SETTINGS_FORM_KEEP_FLAC = "form_keep_flac"
+SETTINGS_OUTPUT_DIR = "output_dir"
+
 # Warmth (chaleur vocale avec Pedalboard)
 SETTINGS_WARMTH_ENABLED = "warmth_enabled"
 SETTINGS_WARMTH_HIGH_SHELF_GAIN = "warmth_high_shelf_gain"
@@ -78,6 +83,12 @@ DEFAULT_WARMTH_DISTORTION_DRIVE_DB = 3.0
 DEFAULT_WARMTH_COMPRESSOR_THRESHOLD_DB = -15.0
 DEFAULT_WARMTH_COMPRESSOR_RATIO = 3.0
 DEFAULT_WARMTH_FINAL_GAIN_DB = 2.0
+
+# DPDF / dpdfnet (débruitage léger ONNX CPU)
+SETTINGS_DPDF_MODEL = "dpdf_model"
+SETTINGS_DPDF_ATTN_LIMIT_DB = "dpdf_attn_limit_db"
+DEFAULT_DPDF_MODEL = "dpdfnet2"
+DEFAULT_DPDF_ATTN_LIMIT_DB = 0.0  # 0 = désactivé (défaut modèle)
 
 
 def is_audio(path: Path) -> bool:

@@ -1,0 +1,20 @@
+[package]
+name = "cs-dpdf"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "DPDFNet (Ceva) noise suppression via ONNX Runtime"
+
+[dependencies]
+thiserror = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+hound = { workspace = true }
+directories = { workspace = true }
+cs-ffmpeg = { workspace = true }
+tempfile = { workspace = true }
+ureq = { workspace = true }
+rustfft = "6"
+parking_lot = { workspace = true }
+# Same ORT stack as HushMic; download-binaries embarque le runtime.
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "ndarray", "download-binaries", "tls-rustls"] }

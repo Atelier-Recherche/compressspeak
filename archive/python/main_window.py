@@ -2,6 +2,7 @@
 """Fenêtre principale de Compress Speak."""
 
 import sys
+import subprocess
 import tempfile
 import shutil
 import time
@@ -11,6 +12,7 @@ from PyQt6 import QtCore, QtGui, QtWidgets, QtMultimedia
 
 import i18n
 from config import (
+    FFMPEG_CMD,
     DEFAULT_AFFTDN_NF,
     DEFAULT_COMP_ATTACK_MS,
     DEFAULT_COMP_RELEASE_MS,
@@ -41,6 +43,9 @@ from config import (
     SETTINGS_VIBE_LANGUAGE,
     SETTINGS_VIBE_MODEL,
     SETTINGS_VIBE_PATH,
+    SETTINGS_FORM_CLEAN_SUFFIX,
+    SETTINGS_FORM_KEEP_FLAC,
+    SETTINGS_OUTPUT_DIR,
     SETTINGS_WARMTH_COMPRESSOR_RATIO,
     SETTINGS_WARMTH_COMPRESSOR_THRESHOLD,
     SETTINGS_WARMTH_DISTORTION_DRIVE,
@@ -53,6 +58,10 @@ from config import (
     DEFAULT_WARMTH_FINAL_GAIN_DB,
     DEFAULT_WARMTH_HIGH_SHELF_CUTOFF_HZ,
     DEFAULT_WARMTH_HIGH_SHELF_GAIN_DB,
+    SETTINGS_DPDF_MODEL,
+    SETTINGS_DPDF_ATTN_LIMIT_DB,
+    DEFAULT_DPDF_MODEL,
+    DEFAULT_DPDF_ATTN_LIMIT_DB,
     VIBE_CMD,
     VIBE_FORMATS,
     VIBE_LANGUAGES,
@@ -63,6 +72,7 @@ import vibe
 import ffmpeg
 import uvr5 as uvr5_module
 import warmth
+import dpdf
 
 
 class Uvr5InProcessWorker(QtCore.QObject):
@@ -122,14 +132,25 @@ class MainWindow(QtWidgets.QWidget):
         self._queue_label = QtWidgets.QLabel()
         drop_layout.addWidget(self._queue_label)
         self.queue_table = QtWidgets.QTableWidget()
-        self.queue_table.setColumnCount(6)
+        self.queue_table.setColumnCount(8)
         self.queue_table.setHorizontalHeaderLabels(
-            ["", i18n.tr("queue.header_file"), i18n.tr("queue.header_gain"), i18n.tr("queue.header_isolate"), i18n.tr("queue.header_transcribe"), ""]
+            [
+                "",
+                i18n.tr("queue.header_file"),
+                i18n.tr("queue.header_gain"),
+                i18n.tr("queue.header_isolate"),
+                i18n.tr("queue.header_transcribe"),
+                i18n.tr("queue.header_warmth"),
+                i18n.tr("queue.header_dpdf"),
+                "",
+            ]
         )
         self.queue_table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.Stretch)
         self.queue_table.setColumnWidth(0, 40)
         self.queue_table.setColumnWidth(3, 90)
         self.queue_table.setColumnWidth(4, 90)
+        self.queue_table.setColumnWidth(5, 70)
+        self.queue_table.setColumnWidth(6, 70)
         self.queue_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
         self.queue_table.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
         self.queue_table.setMinimumHeight(100)
@@ -149,17 +170,19 @@ class MainWindow(QtWidgets.QWidget):
         self.player.media_player.mediaStatusChanged.connect(self._handle_media_status)
 
         form_layout = QtWidgets.QFormLayout()
-        self.add_clean_suffix_checkbox = QtWidgets.QCheckBox(i18n.tr("form.clean_suffix"))
-        self.add_clean_suffix_checkbox.setChecked(True)
-        form_layout.addRow("", self.add_clean_suffix_checkbox)
-        
+        suffix_row = QtWidgets.QHBoxLayout()
+        self.suffix_edit = QtWidgets.QLineEdit()
+        self.suffix_edit.setPlaceholderText(i18n.tr("form.suffix_placeholder"))
+        self.suffix_edit.setMaximumWidth(180)
+        self.suffix_edit.setToolTip(i18n.tr("form.tooltip_suffix"))
+        suffix_row.addWidget(self.suffix_edit)
         self.keep_flac_checkbox = QtWidgets.QCheckBox(i18n.tr("form.keep_flac"))
         self.keep_flac_checkbox.setChecked(False)
-        form_layout.addRow("", self.keep_flac_checkbox)
-        
-        self.warmth_checkbox = QtWidgets.QCheckBox(i18n.tr("form.warmth"))
-        self.warmth_checkbox.setChecked(False)
-        form_layout.addRow("", self.warmth_checkbox)
+        self.keep_flac_checkbox.setToolTip(i18n.tr("form.tooltip_keep_flac"))
+        suffix_row.addWidget(self.keep_flac_checkbox)
+        suffix_row.addStretch()
+        self._suffix_label = QtWidgets.QLabel(i18n.tr("form.suffix_label"))
+        form_layout.addRow(self._suffix_label, suffix_row)
 
         self.output_dir_edit = QtWidgets.QLineEdit()
         self.output_dir_edit.setPlaceholderText(i18n.tr("form.output_placeholder"))
@@ -219,6 +242,8 @@ class MainWindow(QtWidgets.QWidget):
         self._action_uvr5.triggered.connect(self._show_uvr5_dialog)
         self._action_warmth = self._settings_menu.addAction(i18n.tr("warmth.menu"))
         self._action_warmth.triggered.connect(self._show_warmth_dialog)
+        self._action_dpdf = self._settings_menu.addAction(i18n.tr("dpdf.menu"))
+        self._action_dpdf.triggered.connect(self._show_dpdf_dialog)
         self._settings_button.setMenu(self._settings_menu)
         action_layout.addWidget(self._settings_button)
         main_layout.addLayout(action_layout)
@@ -264,7 +289,7 @@ class MainWindow(QtWidgets.QWidget):
         self._using_preview: bool = False
         self._pending_restore_position: int | None = None
         self._pending_restore_resume: bool = False
-        self._conversion_queue: list[tuple[Path, int]] = []
+        self._conversion_queue: list[tuple[Path, int, bool, bool, bool, bool]] = []
         self._current_conversion_index: int = -1
         self._vibe_process: QtCore.QProcess | None = None
         self._transcribe_output_path: Path | None = None
@@ -279,20 +304,29 @@ class MainWindow(QtWidgets.QWidget):
         self._conversion_after_uvr5_gain: int = DEFAULT_GAIN_DB
         self._conversion_keep_flac: bool = False  # Conserver le FLAC après conversion
         self._conversion_apply_warmth: bool = False  # Appliquer la chaleur vocale
+        self._conversion_apply_dpdf: bool = False  # Appliquer le nettoyage DPDF
+        self._conversion_dpdf_applied: bool = False  # DPDF a réellement produit un fichier
+        self._dpdf_temp_dir: Path | None = None  # Temp DPDF hors UVR5 (nettoyé après FFmpeg)
         self._uvr5_last_log_time: float = 0.0  # Pour throttling des logs UVR5
         self._uvr5_worker_vocals_path: Path | None = None  # Pour parser VOCALS_OUTPUT du worker
         self._uvr5_heartbeat_timer: QtCore.QTimer | None = None  # Timer pour vérifier que le processus n'est pas bloqué
+        # Pré-conversion m4a/mp4 → WAV avant UVR5 (contourne un bug audio-separator avec m4a et fichiers temp sans extension)
+        self._uvr5_prep_ffmpeg_process: QtCore.QProcess | None = None
+        self._uvr5_cmd_after_prep: list[str] | None = None  # Commande worker/CLI à lancer après la conversion m4a→wav
 
         self.player.set_gain_db(DEFAULT_GAIN_DB)
+        self._load_form_settings()
         self._check_uvr5_availability()
         self._update_transcribe_button()
 
     def _add_files_to_queue(self, paths: list[Path]):
         for path in paths:
             self._add_queue_row(path, DEFAULT_GAIN_DB)
-        if paths and not self.current_file:
-            # selectRow() déclenche itemSelectionChanged qui charge le fichier automatiquement
-            self.queue_table.selectRow(0)
+        if paths:
+            if not self.current_file:
+                self.queue_table.selectRow(0)
+                # S'assurer que le fichier est bien chargé (au cas où le signal ne se déclenche pas)
+                self._load_file_from_queue(0)
 
     def _add_queue_row(self, path: Path, gain_db: int):
         row = self.queue_table.rowCount()
@@ -321,10 +355,20 @@ class MainWindow(QtWidgets.QWidget):
         transcribe_cb.setEnabled(getattr(self, "_vibe_available_cached", None) is True)
         self.queue_table.setCellWidget(row, 4, transcribe_cb)
 
+        warmth_cb = QtWidgets.QCheckBox()
+        warmth_cb.setToolTip(i18n.tr("warmth.tooltip"))
+        warmth_cb.setEnabled(warmth.is_pedalboard_available())
+        self.queue_table.setCellWidget(row, 5, warmth_cb)
+
+        dpdf_cb = QtWidgets.QCheckBox()
+        dpdf_cb.setToolTip(i18n.tr("dpdf.tooltip"))
+        dpdf_cb.setEnabled(dpdf.is_dpdf_available())
+        self.queue_table.setCellWidget(row, 6, dpdf_cb)
+
         remove_btn = QtWidgets.QPushButton(i18n.tr("btn.remove"))
         remove_btn.setMaximumWidth(32)
         remove_btn.clicked.connect(lambda checked, r=row: self._remove_queue_row(r))
-        self.queue_table.setCellWidget(row, 5, remove_btn)
+        self.queue_table.setCellWidget(row, 7, remove_btn)
         self.log_output.appendPlainText(i18n.tr("log.added", name=path.name))
 
     def _set_row_progress(self, row: int, value: int):
@@ -351,7 +395,7 @@ class MainWindow(QtWidgets.QWidget):
             if next_row >= 0:
                 self.queue_table.selectRow(next_row)
             else:
-                self.player.info_label.setText(self.player.get_no_file_text())
+                self.player.clear_media()
             self._update_transcribe_button()
         self._renumber_lambda_rows()
 
@@ -364,7 +408,7 @@ class MainWindow(QtWidgets.QWidget):
                 except TypeError:
                     pass
                 gain_spin.valueChanged.connect(lambda v, r=row: self._queue_gain_changed(r, v))
-            remove_btn = self.queue_table.cellWidget(row, 4)
+            remove_btn = self.queue_table.cellWidget(row, 7)
             if isinstance(remove_btn, QtWidgets.QPushButton):
                 try:
                     remove_btn.clicked.disconnect()
@@ -401,6 +445,18 @@ class MainWindow(QtWidgets.QWidget):
         if row < 0 or row >= self.queue_table.rowCount():
             return False
         w = self.queue_table.cellWidget(row, 4)
+        return w.isChecked() if isinstance(w, QtWidgets.QCheckBox) else False
+
+    def _get_row_warmth_checked(self, row: int) -> bool:
+        if row < 0 or row >= self.queue_table.rowCount():
+            return False
+        w = self.queue_table.cellWidget(row, 5)
+        return w.isChecked() if isinstance(w, QtWidgets.QCheckBox) else False
+
+    def _get_row_dpdf_checked(self, row: int) -> bool:
+        if row < 0 or row >= self.queue_table.rowCount():
+            return False
+        w = self.queue_table.cellWidget(row, 6)
         return w.isChecked() if isinstance(w, QtWidgets.QCheckBox) else False
 
     def _pick_files_to_add(self):
@@ -551,6 +607,57 @@ class MainWindow(QtWidgets.QWidget):
                 w.setEnabled(vibe_ok)
                 if not vibe_ok:
                     w.setChecked(False)
+            # Checkbox "Chaleur" (colonne 5)
+            warmth_ok = warmth.is_pedalboard_available()
+            warmth_w = self.queue_table.cellWidget(row, 5)
+            if isinstance(warmth_w, QtWidgets.QCheckBox):
+                warmth_w.setEnabled(warmth_ok)
+                if not warmth_ok:
+                    warmth_w.setChecked(False)
+            # Checkbox "Nettoyer DPDF" (colonne 6)
+            dpdf_ok = dpdf.is_dpdf_available()
+            dpdf_w = self.queue_table.cellWidget(row, 6)
+            if isinstance(dpdf_w, QtWidgets.QCheckBox):
+                dpdf_w.setEnabled(dpdf_ok)
+                if not dpdf_ok:
+                    dpdf_w.setChecked(False)
+
+    def _get_dpdf_settings(self) -> tuple[str, float | None]:
+        """Retourne (model, attn_limit_db ou None si désactivé)."""
+        settings = QtCore.QSettings()
+        settings.beginGroup(i18n.SETTINGS_GROUP)
+        model = str(settings.value(SETTINGS_DPDF_MODEL, DEFAULT_DPDF_MODEL) or DEFAULT_DPDF_MODEL).strip()
+        try:
+            attn = float(settings.value(SETTINGS_DPDF_ATTN_LIMIT_DB, DEFAULT_DPDF_ATTN_LIMIT_DB))
+        except (TypeError, ValueError):
+            attn = DEFAULT_DPDF_ATTN_LIMIT_DB
+        settings.endGroup()
+        if model not in dpdf.AVAILABLE_MODELS:
+            model = DEFAULT_DPDF_MODEL
+        return model, (attn if attn > 0 else None)
+
+    def _apply_dpdf_step(self, input_path: Path, output_dir: Path | None = None) -> Path:
+        """
+        Applique DPDF si demandé pour la conversion en cours.
+        Retourne le chemin à utiliser ensuite (nettoyé ou d'origine).
+        Met à jour self._conversion_dpdf_applied en cas de succès.
+        """
+        if not self._conversion_apply_dpdf:
+            return input_path
+        if not dpdf.is_dpdf_available():
+            self.log_output.appendPlainText(i18n.tr("log.dpdf_skipped"))
+            return input_path
+        out_dir = output_dir or input_path.parent
+        out_dir.mkdir(parents=True, exist_ok=True)
+        dpdf_out = out_dir / f"{input_path.stem}_dpdf.wav"
+        model, attn = self._get_dpdf_settings()
+        self.log_output.appendPlainText(i18n.tr("log.dpdf_start", name=input_path.name))
+        if dpdf.apply_dpdf(input_path, dpdf_out, model=model, attn_limit_db=attn):
+            self.log_output.appendPlainText(i18n.tr("log.dpdf_done", path=str(dpdf_out)))
+            self._conversion_dpdf_applied = True
+            return dpdf_out
+        self.log_output.appendPlainText(i18n.tr("log.dpdf_failed"))
+        return input_path
 
     def _update_transcribe_button(self):
         if getattr(self, "_vibe_available_cached", None) is None and not getattr(
@@ -659,9 +766,14 @@ class MainWindow(QtWidgets.QWidget):
         preview_name = f"{self.current_file.stem}_preview_{int(start_sec * 1000)}.opus"
         self._preview_path = self._preview_dir / preview_name
 
+        params = self._get_conversion_params()
+        row = self._get_selected_row()
+        if row >= 0 and self._get_row_dpdf_checked(row) and dpdf.is_dpdf_available():
+            params = {**params, "skip_afftdn": True}
+
         command = ffmpeg.build_preview_command(
             input_path, self._preview_path, start_sec, duration_sec, gain,
-            self._get_conversion_params(),
+            params,
         )
 
         self.log_output.appendPlainText(
@@ -701,15 +813,78 @@ class MainWindow(QtWidgets.QWidget):
         self.player.preview_button.setEnabled(True)
 
         if success:
+            play_path = self._preview_path
+            row = self._get_selected_row()
+            apply_dpdf_preview = row >= 0 and self._get_row_dpdf_checked(row) and dpdf.is_dpdf_available()
+            apply_warmth_preview = (
+                row >= 0
+                and self._get_row_warmth_checked(row)
+                and warmth.is_pedalboard_available()
+            )
+            # Appliquer DPDF puis chaleur à la prévisualisation si les options sont activées
+            if apply_dpdf_preview or apply_warmth_preview:
+                wav_path = self._preview_dir / f"{self._preview_path.stem}_dec.wav"
+                try:
+                    subprocess.run(
+                        [
+                            FFMPEG_CMD, "-y", "-i", str(self._preview_path),
+                            "-vn", "-acodec", "pcm_s16le", str(wav_path),
+                        ],
+                        check=True,
+                        capture_output=True,
+                        timeout=30,
+                    )
+                    work_path = wav_path
+                    extras: list[str] = []
+                    if apply_dpdf_preview:
+                        dpdf_path = self._preview_dir / f"{self._preview_path.stem}_dpdf.wav"
+                        model, attn = self._get_dpdf_settings()
+                        if dpdf.apply_dpdf(work_path, dpdf_path, model=model, attn_limit_db=attn):
+                            work_path = dpdf_path
+                            extras.append("DPDF")
+                    if apply_warmth_preview:
+                        warm_path = self._preview_dir / f"{self._preview_path.stem}_warm.wav"
+                        settings = QtCore.QSettings()
+                        settings.beginGroup(i18n.SETTINGS_GROUP)
+                        high_shelf_gain = float(settings.value(SETTINGS_WARMTH_HIGH_SHELF_GAIN, DEFAULT_WARMTH_HIGH_SHELF_GAIN_DB))
+                        high_shelf_cutoff = float(settings.value(SETTINGS_WARMTH_HIGH_SHELF_CUTOFF, DEFAULT_WARMTH_HIGH_SHELF_CUTOFF_HZ))
+                        distortion_drive = float(settings.value(SETTINGS_WARMTH_DISTORTION_DRIVE, DEFAULT_WARMTH_DISTORTION_DRIVE_DB))
+                        compressor_threshold = float(settings.value(SETTINGS_WARMTH_COMPRESSOR_THRESHOLD, DEFAULT_WARMTH_COMPRESSOR_THRESHOLD_DB))
+                        compressor_ratio = float(settings.value(SETTINGS_WARMTH_COMPRESSOR_RATIO, DEFAULT_WARMTH_COMPRESSOR_RATIO))
+                        final_gain = float(settings.value(SETTINGS_WARMTH_FINAL_GAIN, DEFAULT_WARMTH_FINAL_GAIN_DB))
+                        settings.endGroup()
+                        if warmth.apply_warmth(
+                            work_path, warm_path,
+                            high_shelf_gain_db=high_shelf_gain,
+                            high_shelf_cutoff_hz=high_shelf_cutoff,
+                            distortion_drive_db=distortion_drive,
+                            compressor_threshold_db=compressor_threshold,
+                            compressor_ratio=compressor_ratio,
+                            final_gain_db=final_gain,
+                        ):
+                            work_path = warm_path
+                            extras.append("chaleur")
+                    if work_path != wav_path or extras:
+                        play_path = work_path
+                        suffix = " + ".join(extras) if extras else ""
+                        self.log_output.appendPlainText(
+                            i18n.tr("log.preview_ready") + (f" (avec {suffix})" if suffix else "")
+                        )
+                except (subprocess.CalledProcessError, FileNotFoundError, OSError) as e:
+                    self.log_output.appendPlainText(f"Prévisualisation post-traitement ignorée: {e}")
+                finally:
+                    if wav_path.exists() and play_path != wav_path:
+                        wav_path.unlink(missing_ok=True)
+            if play_path == self._preview_path:
+                self.log_output.appendPlainText(i18n.tr("log.preview_ready"))
             self._using_preview = True
-            self.player.set_media(self._preview_path)
+            self.player.set_media(play_path)
             self.player.set_gain_db(self._get_current_gain())
             self.player.media_player.setPosition(0)
             self.player.media_player.play()
             self.player.play_button.setText(self.player.get_pause_text())
             self.player.return_button.setEnabled(True)
-            self.player.info_label.setText(i18n.tr("player.preview_label", name=self._preview_path.name))
-            self.log_output.appendPlainText(i18n.tr("log.preview_ready"))
+            self.player.info_label.setText(i18n.tr("player.preview_label", name=play_path.name))
         else:
             if exit_status != QtCore.QProcess.ExitStatus.NormalExit:
                 self.log_output.appendPlainText(i18n.tr("log.preview_interrupted"))
@@ -1000,6 +1175,7 @@ class MainWindow(QtWidgets.QWidget):
         raw = vibe.get_vibe_path_from_settings(settings, VIBE_CMD)
         path_edit.setText(raw if raw != VIBE_CMD else "")
         path_edit.setPlaceholderText(VIBE_CMD + " (" + i18n.tr("vibe.use_path") + ")")
+        path_edit.setToolTip(i18n.tr("vibe.tooltip_path"))
         form.addRow(i18n.tr("vibe.path_label"), path_edit)
         layout.addLayout(form)
         btn_layout = QtWidgets.QHBoxLayout()
@@ -1060,6 +1236,7 @@ class MainWindow(QtWidgets.QWidget):
             else:
                 model_combo.setEditText(current_model)
         model_combo.setPlaceholderText(i18n.tr("vibe.model_placeholder"))
+        model_combo.setToolTip(i18n.tr("vibe.tooltip_model"))
         browse_model_btn = QtWidgets.QPushButton(i18n.tr("vibe.browse"))
         def browse_model():
             path, _ = QtWidgets.QFileDialog.getOpenFileName(
@@ -1076,6 +1253,7 @@ class MainWindow(QtWidgets.QWidget):
         model_row.addWidget(browse_model_btn)
         form.addRow(i18n.tr("vibe.model_label"), model_row)
         lang_combo = QtWidgets.QComboBox()
+        lang_combo.setToolTip(i18n.tr("vibe.tooltip_language"))
         for cli_val, label_key in VIBE_LANGUAGES:
             if label_key == "auto":
                 lang_combo.addItem(i18n.tr("vibe.lang_auto"), cli_val)
@@ -1087,6 +1265,7 @@ class MainWindow(QtWidgets.QWidget):
             lang_combo.setCurrentIndex(idx)
         form.addRow(i18n.tr("vibe.language_label"), lang_combo)
         format_combo = QtWidgets.QComboBox()
+        format_combo.setToolTip(i18n.tr("vibe.tooltip_format"))
         for f in VIBE_FORMATS:
             format_combo.addItem(f.upper(), f)
         fmt_current = self._get_vibe_format()
@@ -1135,34 +1314,41 @@ class MainWindow(QtWidgets.QWidget):
         afftdn_spin.setRange(-60, 0)
         afftdn_spin.setValue(params["afftdn_nf"])
         afftdn_spin.setSuffix(" dB")
+        afftdn_spin.setToolTip(i18n.tr("conv.tooltip_afftdn_nf"))
         form.addRow(i18n.tr("conv.afftdn_nf"), afftdn_spin)
         comp_thresh_spin = QtWidgets.QDoubleSpinBox()
         comp_thresh_spin.setRange(-60, 0)
         comp_thresh_spin.setValue(params["comp_threshold_db"])
         comp_thresh_spin.setSuffix(" dB")
+        comp_thresh_spin.setToolTip(i18n.tr("conv.tooltip_comp_threshold"))
         form.addRow(i18n.tr("conv.comp_threshold"), comp_thresh_spin)
         comp_ratio_spin = QtWidgets.QDoubleSpinBox()
         comp_ratio_spin.setRange(1.0, 20.0)
         comp_ratio_spin.setDecimals(1)
         comp_ratio_spin.setValue(params["comp_ratio"])
+        comp_ratio_spin.setToolTip(i18n.tr("conv.tooltip_comp_ratio"))
         form.addRow(i18n.tr("conv.comp_ratio"), comp_ratio_spin)
         comp_attack_spin = QtWidgets.QSpinBox()
         comp_attack_spin.setRange(1, 2000)
         comp_attack_spin.setValue(params["comp_attack_ms"])
         comp_attack_spin.setSuffix(" ms")
+        comp_attack_spin.setToolTip(i18n.tr("conv.tooltip_comp_attack"))
         form.addRow(i18n.tr("conv.comp_attack"), comp_attack_spin)
         comp_release_spin = QtWidgets.QSpinBox()
         comp_release_spin.setRange(10, 5000)
         comp_release_spin.setValue(params["comp_release_ms"])
         comp_release_spin.setSuffix(" ms")
+        comp_release_spin.setToolTip(i18n.tr("conv.tooltip_comp_release"))
         form.addRow(i18n.tr("conv.comp_release"), comp_release_spin)
         opus_edit = QtWidgets.QLineEdit()
         opus_edit.setText(params["opus_bitrate"])
         opus_edit.setPlaceholderText("20k")
+        opus_edit.setToolTip(i18n.tr("conv.tooltip_opus_bitrate"))
         form.addRow(i18n.tr("conv.opus_bitrate"), opus_edit)
         opus_preview_edit = QtWidgets.QLineEdit()
         opus_preview_edit.setText(params["opus_preview_bitrate"])
         opus_preview_edit.setPlaceholderText("64k")
+        opus_preview_edit.setToolTip(i18n.tr("conv.tooltip_opus_preview"))
         form.addRow(i18n.tr("conv.opus_preview_bitrate"), opus_preview_edit)
         layout.addLayout(form)
         
@@ -1277,11 +1463,13 @@ class MainWindow(QtWidgets.QWidget):
         path_edit = QtWidgets.QLineEdit()
         path_edit.setText(path)
         path_edit.setPlaceholderText("vide = PATH ; ou script .py / exe ; ou dossier venv")
+        path_edit.setToolTip(i18n.tr("uvr5.tooltip_path"))
         form.addRow(i18n.tr("uvr5.path_label"), path_edit)
         chunk_spin = QtWidgets.QSpinBox()
         chunk_spin.setRange(60, 3600)
         chunk_spin.setValue(min(3600, max(60, chunk)))
         chunk_spin.setSuffix(" s")
+        chunk_spin.setToolTip(i18n.tr("uvr5.tooltip_chunk"))
         form.addRow(i18n.tr("uvr5.chunk_label"), chunk_spin)
         
         # Sélection du stem à extraire
@@ -1290,6 +1478,7 @@ class MainWindow(QtWidgets.QWidget):
         for s in stems:
             stem_combo.addItem(s)
         stem_combo.setCurrentText(stem if stem in stems else "Vocals")
+        stem_combo.setToolTip(i18n.tr("uvr5.tooltip_stem"))
         form.addRow("Stem à extraire:", stem_combo)
         
         # Sélection de l'adapteur DirectML (GPU)
@@ -1304,11 +1493,13 @@ class MainWindow(QtWidgets.QWidget):
             if dml_combo.itemData(idx) == dml_dev:
                 dml_combo.setCurrentIndex(idx)
                 break
+        dml_combo.setToolTip(i18n.tr("uvr5.tooltip_dml"))
         form.addRow("Adapteur DirectML (GPU):", dml_combo)
         model_edit = QtWidgets.QLineEdit()
         model_edit.setText(model)
         model_edit.setPlaceholderText("C:\\...\\models\\MDX_Net_Models\\MDX23C-8KFFT-InstVoc_HQ.ckpt")
         model_edit.setMinimumWidth(320)
+        model_edit.setToolTip(i18n.tr("uvr5.tooltip_model"))
         model_row = QtWidgets.QHBoxLayout()
         model_row.addWidget(model_edit)
         model_browse_btn = QtWidgets.QPushButton(i18n.tr("uvr5.model_browse"))
@@ -1330,14 +1521,17 @@ class MainWindow(QtWidgets.QWidget):
         mdx_segment_spin = QtWidgets.QSpinBox()
         mdx_segment_spin.setRange(256, 4096)
         mdx_segment_spin.setValue(min(4096, max(256, mdx_seg)))
+        mdx_segment_spin.setToolTip(i18n.tr("uvr5.tooltip_mdx_segment"))
         adv_layout.addRow(i18n.tr("uvr5.mdx_segment_size"), mdx_segment_spin)
         mdxc_overlap_spin = QtWidgets.QSpinBox()
         mdxc_overlap_spin.setRange(2, 50)
         mdxc_overlap_spin.setValue(min(50, max(2, mdxc_ov)))
+        mdxc_overlap_spin.setToolTip(i18n.tr("uvr5.tooltip_mdxc_overlap"))
         adv_layout.addRow(i18n.tr("uvr5.mdxc_overlap"), mdxc_overlap_spin)
         mdx_batch_spin = QtWidgets.QSpinBox()
         mdx_batch_spin.setRange(1, 32)
         mdx_batch_spin.setValue(min(32, max(1, mdx_bs)))
+        mdx_batch_spin.setToolTip(i18n.tr("uvr5.tooltip_mdx_batch"))
         adv_layout.addRow(i18n.tr("uvr5.mdx_batch_size"), mdx_batch_spin)
         layout.addWidget(grp)
         browse_row = QtWidgets.QHBoxLayout()
@@ -1435,6 +1629,7 @@ class MainWindow(QtWidgets.QWidget):
         high_shelf_gain_spin.setSingleStep(0.5)
         high_shelf_gain_spin.setValue(high_shelf_gain)
         high_shelf_gain_spin.setSuffix(" dB")
+        high_shelf_gain_spin.setToolTip(i18n.tr("warmth.tooltip_high_shelf_gain"))
         form.addRow(i18n.tr("warmth.high_shelf_gain"), high_shelf_gain_spin)
         
         high_shelf_cutoff_spin = QtWidgets.QDoubleSpinBox()
@@ -1442,6 +1637,7 @@ class MainWindow(QtWidgets.QWidget):
         high_shelf_cutoff_spin.setSingleStep(50.0)
         high_shelf_cutoff_spin.setValue(high_shelf_cutoff)
         high_shelf_cutoff_spin.setSuffix(" Hz")
+        high_shelf_cutoff_spin.setToolTip(i18n.tr("warmth.tooltip_high_shelf_cutoff"))
         form.addRow(i18n.tr("warmth.high_shelf_cutoff"), high_shelf_cutoff_spin)
         
         distortion_drive_spin = QtWidgets.QDoubleSpinBox()
@@ -1449,6 +1645,7 @@ class MainWindow(QtWidgets.QWidget):
         distortion_drive_spin.setSingleStep(0.5)
         distortion_drive_spin.setValue(distortion_drive)
         distortion_drive_spin.setSuffix(" dB")
+        distortion_drive_spin.setToolTip(i18n.tr("warmth.tooltip_distortion"))
         form.addRow(i18n.tr("warmth.distortion_drive"), distortion_drive_spin)
         
         compressor_threshold_spin = QtWidgets.QDoubleSpinBox()
@@ -1456,12 +1653,14 @@ class MainWindow(QtWidgets.QWidget):
         compressor_threshold_spin.setSingleStep(1.0)
         compressor_threshold_spin.setValue(compressor_threshold)
         compressor_threshold_spin.setSuffix(" dB")
+        compressor_threshold_spin.setToolTip(i18n.tr("warmth.tooltip_compressor_threshold"))
         form.addRow(i18n.tr("warmth.compressor_threshold"), compressor_threshold_spin)
         
         compressor_ratio_spin = QtWidgets.QDoubleSpinBox()
         compressor_ratio_spin.setRange(1.0, 10.0)
         compressor_ratio_spin.setSingleStep(0.5)
         compressor_ratio_spin.setValue(compressor_ratio)
+        compressor_ratio_spin.setToolTip(i18n.tr("warmth.tooltip_compressor_ratio"))
         form.addRow(i18n.tr("warmth.compressor_ratio"), compressor_ratio_spin)
         
         final_gain_spin = QtWidgets.QDoubleSpinBox()
@@ -1469,6 +1668,7 @@ class MainWindow(QtWidgets.QWidget):
         final_gain_spin.setSingleStep(0.5)
         final_gain_spin.setValue(final_gain)
         final_gain_spin.setSuffix(" dB")
+        final_gain_spin.setToolTip(i18n.tr("warmth.tooltip_final_gain"))
         form.addRow(i18n.tr("warmth.final_gain"), final_gain_spin)
         
         layout.addLayout(form)
@@ -1534,6 +1734,63 @@ class MainWindow(QtWidgets.QWidget):
             settings.setValue(SETTINGS_WARMTH_COMPRESSOR_THRESHOLD, compressor_threshold_spin.value())
             settings.setValue(SETTINGS_WARMTH_COMPRESSOR_RATIO, compressor_ratio_spin.value())
             settings.setValue(SETTINGS_WARMTH_FINAL_GAIN, final_gain_spin.value())
+            settings.endGroup()
+            settings.sync()
+
+    def _show_dpdf_dialog(self):
+        """Fenêtre de configuration du nettoyage DPDF (dpdfnet)."""
+        settings = QtCore.QSettings()
+        settings.beginGroup(i18n.SETTINGS_GROUP)
+        model = str(settings.value(SETTINGS_DPDF_MODEL, DEFAULT_DPDF_MODEL) or DEFAULT_DPDF_MODEL).strip()
+        try:
+            attn = float(settings.value(SETTINGS_DPDF_ATTN_LIMIT_DB, DEFAULT_DPDF_ATTN_LIMIT_DB))
+        except (TypeError, ValueError):
+            attn = DEFAULT_DPDF_ATTN_LIMIT_DB
+        settings.endGroup()
+        if model not in dpdf.AVAILABLE_MODELS:
+            model = DEFAULT_DPDF_MODEL
+
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle(i18n.tr("dpdf.dialog_title"))
+        layout = QtWidgets.QVBoxLayout(dialog)
+
+        desc_label = QtWidgets.QLabel(i18n.tr("dpdf.description"))
+        desc_label.setWordWrap(True)
+        layout.addWidget(desc_label)
+
+        if not dpdf.is_dpdf_available():
+            warn = QtWidgets.QLabel(i18n.tr("dpdf.not_installed"))
+            warn.setWordWrap(True)
+            layout.addWidget(warn)
+
+        form = QtWidgets.QFormLayout()
+        model_combo = QtWidgets.QComboBox()
+        for mid in dpdf.AVAILABLE_MODELS:
+            model_combo.addItem(mid, mid)
+        idx = model_combo.findData(model)
+        model_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        form.addRow(i18n.tr("dpdf.model"), model_combo)
+
+        attn_spin = QtWidgets.QDoubleSpinBox()
+        attn_spin.setRange(0.0, 40.0)
+        attn_spin.setSingleStep(1.0)
+        attn_spin.setValue(attn)
+        attn_spin.setSuffix(" dB")
+        form.addRow(i18n.tr("dpdf.attn_limit"), attn_spin)
+        layout.addLayout(form)
+
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.StandardButton.Ok | QtWidgets.QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            settings = QtCore.QSettings()
+            settings.beginGroup(i18n.SETTINGS_GROUP)
+            settings.setValue(SETTINGS_DPDF_MODEL, model_combo.currentData() or DEFAULT_DPDF_MODEL)
+            settings.setValue(SETTINGS_DPDF_ATTN_LIMIT_DB, attn_spin.value())
             settings.endGroup()
             settings.sync()
 
@@ -1612,13 +1869,17 @@ class MainWindow(QtWidgets.QWidget):
                 i18n.tr("queue.header_gain"),
                 i18n.tr("queue.header_isolate"),
                 i18n.tr("queue.header_transcribe"),
+                i18n.tr("queue.header_warmth"),
+                i18n.tr("queue.header_dpdf"),
                 "",
             ]
         )
         self.add_files_button.setText(i18n.tr("btn.add_files"))
+        self._suffix_label.setText(i18n.tr("form.suffix_label"))
+        self.suffix_edit.setPlaceholderText(i18n.tr("form.suffix_placeholder"))
+        self.keep_flac_checkbox.setText(i18n.tr("form.keep_flac"))
         self._output_dir_label.setText(i18n.tr("form.output_dir"))
         self.output_dir_edit.setPlaceholderText(i18n.tr("form.output_placeholder"))
-        self.add_clean_suffix_checkbox.setText(i18n.tr("form.clean_suffix"))
         self.convert_button.setText(i18n.tr("btn.convert"))
         self.cancel_button.setText(i18n.tr("btn.cancel"))
         self.open_folder_button.setText(i18n.tr("btn.choose"))
@@ -1633,6 +1894,8 @@ class MainWindow(QtWidgets.QWidget):
         self._action_vibe_options.setText(i18n.tr("vibe.options_menu"))
         self._action_conv.setText(i18n.tr("conv.menu"))
         self._action_uvr5.setText(i18n.tr("uvr5.menu"))
+        self._action_warmth.setText(i18n.tr("warmth.menu"))
+        self._action_dpdf.setText(i18n.tr("dpdf.menu"))
         self.transcribe_button.setText(i18n.tr("btn.transcribe"))
         self.transcribe_button.setToolTip(i18n.tr("transcribe.tooltip"))
         self.process_all_button.setText(i18n.tr("btn.process_all"))
@@ -1652,13 +1915,14 @@ class MainWindow(QtWidgets.QWidget):
     def _convert_audio(self):
         self._conversion_queue = []
         keep_flac = self.keep_flac_checkbox.isChecked()
-        apply_warmth = self.warmth_checkbox.isChecked()
         for row in range(self.queue_table.rowCount()):
             item = self._get_queue_item(row)
             if item and item[0].exists():
                 isolate = self._get_row_isolate_checked(row)
-                # Queue: (path, gain, isolate, keep_flac, apply_warmth)
-                self._conversion_queue.append((item[0], item[1], isolate, keep_flac, apply_warmth))
+                apply_warmth = self._get_row_warmth_checked(row)
+                apply_dpdf = self._get_row_dpdf_checked(row)
+                # Queue: (path, gain, isolate, keep_flac, apply_warmth, apply_dpdf)
+                self._conversion_queue.append((item[0], item[1], isolate, keep_flac, apply_warmth, apply_dpdf))
         if not self._conversion_queue:
             QtWidgets.QMessageBox.warning(
                 self,
@@ -1682,15 +1946,17 @@ class MainWindow(QtWidgets.QWidget):
         if self._current_conversion_index < 0 or self._current_conversion_index >= len(self._conversion_queue):
             self._on_queue_conversion_done()
             return
-        input_path, gain, isolate, keep_flac, apply_warmth = self._conversion_queue[self._current_conversion_index]
+        input_path, gain, isolate, keep_flac, apply_warmth, apply_dpdf = self._conversion_queue[self._current_conversion_index]
         output_dir = self._output_dir or input_path.parent
-        suffix = "_clean" if self.add_clean_suffix_checkbox.isChecked() else ""
+        suffix = (self.suffix_edit.text().strip() or "").strip()
         output_path = output_dir / f"{input_path.stem}{suffix}.opus"
         total = len(self._conversion_queue)
         
-        # Stocker keep_flac et apply_warmth pour l'utiliser après UVR5
+        # Stocker keep_flac / warmth / dpdf pour l'utiliser après UVR5
         self._conversion_keep_flac = keep_flac
         self._conversion_apply_warmth = apply_warmth
+        self._conversion_apply_dpdf = apply_dpdf
+        self._conversion_dpdf_applied = False
 
         if isolate:
             settings = QtCore.QSettings()
@@ -1742,20 +2008,49 @@ class MainWindow(QtWidgets.QWidget):
                     self._cleanup_ffmpeg_state()
                     QtCore.QTimer.singleShot(0, self._start_next_in_queue)
                     return
+                worker_script = Path(__file__).parent / "uvr5_worker.py"
+                model_dir, model_name = "", ""
+                if model:
+                    from uvr5 import _parse_model_path
+                    model_dir, model_name = _parse_model_path(model)
+                model_dir = model_dir or "/tmp/audio-separator-models/"
+                model_name = model_name or "model_bs_roformer_ep_317_sdr_12.9755.ckpt"
+                # Pré-conversion m4a/mp4 → WAV : évite un bug d'audio-separator (muxer m4a vers fichier temp sans extension)
+                _m4a_extensions = (".m4a", ".mp4", ".3gp", ".3g2", ".mj2")
+                need_prep = input_path.suffix.lower() in _m4a_extensions
+                if need_prep:
+                    wav_path = self._uvr5_output_dir / "source.wav"
+                    if uvr5_module.is_uvr5_default_path(uvr_path) and worker_script.exists():
+                        self._uvr5_cmd_after_prep = [
+                            sys.executable, str(worker_script),
+                            str(wav_path), str(self._uvr5_output_dir),
+                            str(chunk_sec), model_dir, model_name,
+                            str(mdx_seg), str(mdxc_ov), str(mdx_bs),
+                            str(dml_device), stem,
+                        ]
+                    else:
+                        self._uvr5_cmd_after_prep = uvr5_module.build_uvr5_command(
+                            uvr_path, wav_path, self._uvr5_output_dir, chunk_sec, model,
+                            mdx_segment_size=mdx_seg, mdxc_overlap=mdxc_ov, mdx_batch_size=mdx_bs,
+                            stem=stem,
+                        )
+                    if self._uvr5_cmd_after_prep:
+                        self.log_output.appendPlainText("UVR5: conversion préalable m4a/mp4 → WAV...")
+                        prep_cmd = ffmpeg.build_m4a_to_wav_command(input_path, wav_path)
+                        self._uvr5_prep_ffmpeg_process = QtCore.QProcess(self)
+                        self._uvr5_prep_ffmpeg_process.setProgram(prep_cmd[0])
+                        self._uvr5_prep_ffmpeg_process.setArguments(prep_cmd[1:])
+                        self._uvr5_prep_ffmpeg_process.finished.connect(self._on_uvr5_prep_ffmpeg_finished)
+                        self._uvr5_prep_ffmpeg_process.start()
+                    else:
+                        self._uvr5_cmd_after_prep = None
+                    return
                 # Stratégie : utiliser un script worker en processus séparé pour DirectML sans gel de l'UI
                 if uvr5_module.is_uvr5_default_path(uvr_path):
-                    worker_script = Path(__file__).parent / "uvr5_worker.py"
                     if worker_script.exists():
                         # Mode WORKER PROCESS avec DirectML (GPU AMD/Intel)
                         self.log_output.appendPlainText("=== UVR5: Mode WORKER PROCESS avec DirectML (GPU AMD) ===")
                         python_exe = sys.executable
-                        model_dir, model_name = "", ""
-                        if model:
-                            from uvr5 import _parse_model_path
-                            model_dir, model_name = _parse_model_path(model)
-                        model_dir = model_dir or "/tmp/audio-separator-models/"
-                        model_name = model_name or "model_bs_roformer_ep_317_sdr_12.9755.ckpt"
-                        
                         cmd = [
                             python_exe, str(worker_script),
                             str(input_path), str(self._uvr5_output_dir),
@@ -1820,8 +2115,18 @@ class MainWindow(QtWidgets.QWidget):
             else:
                 self.log_output.appendPlainText(i18n.tr("uvr5.not_found"))
 
+        # Sans isolation : DPDF optionnel puis FFmpeg
+        if self._dpdf_temp_dir and self._dpdf_temp_dir.exists():
+            shutil.rmtree(self._dpdf_temp_dir, ignore_errors=True)
+        self._dpdf_temp_dir = None
+        source_for_ffmpeg = input_path
+        if self._conversion_apply_dpdf:
+            self._dpdf_temp_dir = Path(tempfile.mkdtemp(prefix="compressspeak_dpdf_"))
+            source_for_ffmpeg = self._apply_dpdf_step(input_path, self._dpdf_temp_dir)
         params = self._get_conversion_params()
-        command = ffmpeg.build_convert_command(input_path, output_path, gain, params)
+        if self._conversion_dpdf_applied:
+            params = {**params, "skip_afftdn": True}
+        command = ffmpeg.build_convert_command(source_for_ffmpeg, output_path, gain, params)
         self._set_row_progress(self._current_conversion_index, -1)
         self.log_output.appendPlainText(f"[{self._current_conversion_index + 1}/{total}] {input_path.name} → {output_path.name}")
         self.log_output.appendPlainText("FFmpeg: " + " ".join(command))
@@ -1834,6 +2139,60 @@ class MainWindow(QtWidgets.QWidget):
         """Affiche un message périodique pour indiquer que le traitement UVR5 continue."""
         if self._uvr5_process and self._uvr5_process.state() != QtCore.QProcess.ProcessState.NotRunning:
             self.log_output.appendPlainText("UVR5: Traitement en cours (utilisation GPU)...")
+
+    def _on_uvr5_prep_ffmpeg_finished(self, exit_code: int, exit_status: QtCore.QProcess.ExitStatus):
+        """Après conversion m4a→WAV, lance le worker ou la CLI UVR5."""
+        prep_proc = self._uvr5_prep_ffmpeg_process
+        self._uvr5_prep_ffmpeg_process = None
+        cmd_after = self._uvr5_cmd_after_prep
+        self._uvr5_cmd_after_prep = None
+        if prep_proc:
+            prep_proc.deleteLater()
+        if self._cancel_requested or not cmd_after:
+            if self._uvr5_output_dir and self._uvr5_output_dir.exists():
+                shutil.rmtree(self._uvr5_output_dir, ignore_errors=True)
+            self._uvr5_output_dir = None
+            self._current_conversion_index += 1
+            self._cleanup_ffmpeg_state()
+            QtCore.QTimer.singleShot(0, self._start_next_in_queue)
+            return
+        if exit_status != QtCore.QProcess.ExitStatus.NormalExit or exit_code != 0:
+            self.log_output.appendPlainText("UVR5: échec de la conversion préalable m4a → WAV.")
+            if self._uvr5_output_dir and self._uvr5_output_dir.exists():
+                shutil.rmtree(self._uvr5_output_dir, ignore_errors=True)
+            self._uvr5_output_dir = None
+            self._current_conversion_index += 1
+            self._cleanup_ffmpeg_state()
+            QtCore.QTimer.singleShot(0, self._start_next_in_queue)
+            return
+        self.log_output.appendPlainText("UVR5: WAV prêt, lancement de l'extraction...")
+        self._uvr5_process = QtCore.QProcess(self)
+        env = QtCore.QProcessEnvironment.systemEnvironment()
+        env.insert("PYTHONUNBUFFERED", "1")
+        env.insert("TQDM_DISABLE", "1")
+        self._uvr5_process.setProcessEnvironment(env)
+        self._uvr5_process.setProgram(cmd_after[0])
+        self._uvr5_process.setArguments(cmd_after[1:])
+        self._uvr5_process.setProcessChannelMode(QtCore.QProcess.ProcessChannelMode.SeparateChannels)
+        self._uvr5_process.readyReadStandardError.connect(self._on_uvr5_output)
+        self._uvr5_process.readyReadStandardOutput.connect(self._on_uvr5_output)
+        self._uvr5_process.finished.connect(self._on_uvr5_finished)
+        self._uvr5_process.start()
+        if not self._uvr5_process.waitForStarted(10000):
+            self.log_output.appendPlainText("UVR5: Impossible de démarrer le worker")
+            self._uvr5_process = None
+            if self._uvr5_output_dir and self._uvr5_output_dir.exists():
+                shutil.rmtree(self._uvr5_output_dir, ignore_errors=True)
+            self._uvr5_output_dir = None
+            self._current_conversion_index += 1
+            self._cleanup_ffmpeg_state()
+            QtCore.QTimer.singleShot(0, self._start_next_in_queue)
+            return
+        is_worker = "uvr5_worker" in str(cmd_after[1])
+        if is_worker:
+            self._uvr5_heartbeat_timer = QtCore.QTimer(self)
+            self._uvr5_heartbeat_timer.timeout.connect(self._on_uvr5_heartbeat)
+            self._uvr5_heartbeat_timer.start(30000)
     
     def _on_uvr5_output(self):
         if not self._uvr5_process:
@@ -1923,7 +2282,34 @@ class MainWindow(QtWidgets.QWidget):
             QtCore.QTimer.singleShot(0, self._start_next_in_queue)
             return
         self.log_output.appendPlainText(i18n.tr("log.uvr5_done", path=str(vocals_path)))
+        # DPDF puis chaleur (même ordre que le chemin worker)
+        vocals_path = self._apply_dpdf_step(vocals_path, out_dir)
+        if self._conversion_apply_warmth and warmth.is_pedalboard_available() and out_dir:
+            self.log_output.appendPlainText("Application de la chaleur vocale...")
+            warmth_output = out_dir / f"{Path(vocals_path).stem}_warm{Path(vocals_path).suffix}"
+            settings = QtCore.QSettings()
+            settings.beginGroup(i18n.SETTINGS_GROUP)
+            high_shelf_gain = float(settings.value(SETTINGS_WARMTH_HIGH_SHELF_GAIN, DEFAULT_WARMTH_HIGH_SHELF_GAIN_DB))
+            high_shelf_cutoff = float(settings.value(SETTINGS_WARMTH_HIGH_SHELF_CUTOFF, DEFAULT_WARMTH_HIGH_SHELF_CUTOFF_HZ))
+            distortion_drive = float(settings.value(SETTINGS_WARMTH_DISTORTION_DRIVE, DEFAULT_WARMTH_DISTORTION_DRIVE_DB))
+            compressor_threshold = float(settings.value(SETTINGS_WARMTH_COMPRESSOR_THRESHOLD, DEFAULT_WARMTH_COMPRESSOR_THRESHOLD_DB))
+            compressor_ratio = float(settings.value(SETTINGS_WARMTH_COMPRESSOR_RATIO, DEFAULT_WARMTH_COMPRESSOR_RATIO))
+            final_gain = float(settings.value(SETTINGS_WARMTH_FINAL_GAIN, DEFAULT_WARMTH_FINAL_GAIN_DB))
+            settings.endGroup()
+            if warmth.apply_warmth(
+                vocals_path,
+                warmth_output,
+                high_shelf_gain_db=high_shelf_gain,
+                high_shelf_cutoff_hz=high_shelf_cutoff,
+                distortion_drive_db=distortion_drive,
+                compressor_threshold_db=compressor_threshold,
+                compressor_ratio=compressor_ratio,
+                final_gain_db=final_gain,
+            ):
+                vocals_path = warmth_output
         params = self._get_conversion_params()
+        if self._conversion_dpdf_applied:
+            params = {**params, "skip_afftdn": True}
         command = ffmpeg.build_convert_command(vocals_path, output_path, gain, params)
         self._current_duration_sec = None
         self._start_ffmpeg(command, output_path)
@@ -1965,22 +2351,25 @@ class MainWindow(QtWidgets.QWidget):
             QtCore.QTimer.singleShot(0, self._start_next_in_queue)
             return
         self.log_output.appendPlainText(i18n.tr("log.uvr5_done", path=str(vocals_path)))
-        
+
+        # DPDF avant chaleur
+        vocals_path = self._apply_dpdf_step(vocals_path, out_dir)
+
         # Appliquer la chaleur vocale si demandé
         if self._conversion_apply_warmth and warmth.is_pedalboard_available():
             self.log_output.appendPlainText("Application de la chaleur vocale...")
-            warmth_output = out_dir / f"{vocals_path.stem}_warm{vocals_path.suffix}"
-            
+            warmth_output = out_dir / f"{Path(vocals_path).stem}_warm{Path(vocals_path).suffix}"
+
             settings = QtCore.QSettings()
             settings.beginGroup(i18n.SETTINGS_GROUP)
-            high_shelf_gain = float(settings.value("warmth_high_shelf_gain", 2.0))
-            high_shelf_cutoff = float(settings.value("warmth_high_shelf_cutoff", 400.0))
-            distortion_drive = float(settings.value("warmth_distortion_drive", 3.0))
-            compressor_threshold = float(settings.value("warmth_compressor_threshold", -15.0))
-            compressor_ratio = float(settings.value("warmth_compressor_ratio", 3.0))
-            final_gain = float(settings.value("warmth_final_gain", 2.0))
+            high_shelf_gain = float(settings.value(SETTINGS_WARMTH_HIGH_SHELF_GAIN, DEFAULT_WARMTH_HIGH_SHELF_GAIN_DB))
+            high_shelf_cutoff = float(settings.value(SETTINGS_WARMTH_HIGH_SHELF_CUTOFF, DEFAULT_WARMTH_HIGH_SHELF_CUTOFF_HZ))
+            distortion_drive = float(settings.value(SETTINGS_WARMTH_DISTORTION_DRIVE, DEFAULT_WARMTH_DISTORTION_DRIVE_DB))
+            compressor_threshold = float(settings.value(SETTINGS_WARMTH_COMPRESSOR_THRESHOLD, DEFAULT_WARMTH_COMPRESSOR_THRESHOLD_DB))
+            compressor_ratio = float(settings.value(SETTINGS_WARMTH_COMPRESSOR_RATIO, DEFAULT_WARMTH_COMPRESSOR_RATIO))
+            final_gain = float(settings.value(SETTINGS_WARMTH_FINAL_GAIN, DEFAULT_WARMTH_FINAL_GAIN_DB))
             settings.endGroup()
-            
+
             if warmth.apply_warmth(
                 vocals_path,
                 warmth_output,
@@ -1989,7 +2378,7 @@ class MainWindow(QtWidgets.QWidget):
                 distortion_drive_db=distortion_drive,
                 compressor_threshold_db=compressor_threshold,
                 compressor_ratio=compressor_ratio,
-                final_gain_db=final_gain
+                final_gain_db=final_gain,
             ):
                 self.log_output.appendPlainText(f"Chaleur appliquée: {warmth_output.name}")
                 vocals_path = warmth_output
@@ -1997,8 +2386,11 @@ class MainWindow(QtWidgets.QWidget):
                 self.log_output.appendPlainText("ATTENTION: Échec de l'application de la chaleur, utilisation du fichier d'origine")
         elif self._conversion_apply_warmth:
             self.log_output.appendPlainText("ATTENTION: Pedalboard non installé, chaleur ignorée")
-        
+
         params = self._get_conversion_params()
+        if self._conversion_dpdf_applied:
+            params = {**params, "skip_afftdn": True}
+
         command = ffmpeg.build_convert_command(vocals_path, output_path, gain, params)
         self._current_duration_sec = None
         self._start_ffmpeg(command, output_path)
@@ -2093,6 +2485,7 @@ class MainWindow(QtWidgets.QWidget):
             if self._uvr5_output_dir and self._uvr5_output_dir.exists():
                 shutil.rmtree(self._uvr5_output_dir, ignore_errors=True)
             self._uvr5_output_dir = None
+            self._cleanup_dpdf_temp()
             self._set_row_progress(self._current_conversion_index, 100)
             self.progress_bar.setRange(0, 100)
             self.progress_bar.setValue(100)
@@ -2110,6 +2503,7 @@ class MainWindow(QtWidgets.QWidget):
             if self._uvr5_output_dir and self._uvr5_output_dir.exists():
                 shutil.rmtree(self._uvr5_output_dir, ignore_errors=True)
             self._uvr5_output_dir = None
+            self._cleanup_dpdf_temp()
             self.progress_bar.setRange(0, 100)
             self.progress_bar.setValue(0)
             self.progress_bar.setFormat(i18n.tr("progress.cancelled"))
@@ -2120,6 +2514,7 @@ class MainWindow(QtWidgets.QWidget):
             if self._uvr5_output_dir and self._uvr5_output_dir.exists():
                 shutil.rmtree(self._uvr5_output_dir, ignore_errors=True)
             self._uvr5_output_dir = None
+            self._cleanup_dpdf_temp()
             self.progress_bar.setFormat(i18n.tr("progress.failed"))
             self.log_output.appendPlainText(i18n.tr("log.conversion_failed"))
             QtWidgets.QMessageBox.critical(
@@ -2158,9 +2553,9 @@ class MainWindow(QtWidgets.QWidget):
                 i18n.tr("msg.done_multi", total=total),
             )
         elif success and total == 1:
-            input_path, gain, isolate, keep_flac, apply_warmth = self._conversion_queue[0]
+            input_path, gain, isolate, keep_flac, apply_warmth, apply_dpdf = self._conversion_queue[0]
             output_dir = self._output_dir or input_path.parent
-            suffix = "_clean" if self.add_clean_suffix_checkbox.isChecked() else ""
+            suffix = (self.suffix_edit.text().strip() or "").strip()
             output_path = output_dir / f"{input_path.stem}{suffix}.opus"
             QtWidgets.QMessageBox.information(
                 self,
@@ -2173,6 +2568,23 @@ class MainWindow(QtWidgets.QWidget):
         if getattr(self, "_uvr5_thread", None) and self._uvr5_thread.isRunning():
             self._cancel_requested = True
             self.log_output.appendPlainText(i18n.tr("log.cancel_requested"))
+            return
+        if self._uvr5_prep_ffmpeg_process and self._uvr5_prep_ffmpeg_process.state() != QtCore.QProcess.ProcessState.NotRunning:
+            self._cancel_requested = True
+            self.log_output.appendPlainText(i18n.tr("log.cancel_requested"))
+            self._uvr5_prep_ffmpeg_process.finished.disconnect()
+            self._uvr5_prep_ffmpeg_process.terminate()
+            if not self._uvr5_prep_ffmpeg_process.waitForFinished(3000):
+                self._uvr5_prep_ffmpeg_process.kill()
+            self._uvr5_prep_ffmpeg_process.deleteLater()
+            self._uvr5_prep_ffmpeg_process = None
+            self._uvr5_cmd_after_prep = None
+            if self._uvr5_output_dir and self._uvr5_output_dir.exists():
+                shutil.rmtree(self._uvr5_output_dir, ignore_errors=True)
+            self._uvr5_output_dir = None
+            self._current_conversion_index += 1
+            self._cleanup_ffmpeg_state()
+            QtCore.QTimer.singleShot(0, self._start_next_in_queue)
             return
         if self._uvr5_process and self._uvr5_process.state() != QtCore.QProcess.ProcessState.NotRunning:
             # Arrêter le timer heartbeat
@@ -2211,10 +2623,16 @@ class MainWindow(QtWidgets.QWidget):
             self._ffmpeg_process.kill()
             self._ffmpeg_process.waitForFinished(2000)
 
+    def _cleanup_dpdf_temp(self):
+        if self._dpdf_temp_dir and self._dpdf_temp_dir.exists():
+            shutil.rmtree(self._dpdf_temp_dir, ignore_errors=True)
+        self._dpdf_temp_dir = None
+
     def _cleanup_ffmpeg_state(self):
         if self._ffmpeg_process:
             self._ffmpeg_process.deleteLater()
             self._ffmpeg_process = None
+        self._cleanup_dpdf_temp()
         self.convert_button.setEnabled(True)
         self.open_folder_button.setEnabled(True)
         self.add_files_button.setEnabled(True)
@@ -2227,7 +2645,33 @@ class MainWindow(QtWidgets.QWidget):
         self.progress_bar.setVisible(False)
         self._update_transcribe_button()
 
+    def _load_form_settings(self):
+        """Charge les réglages du formulaire depuis QSettings (au démarrage)."""
+        settings = QtCore.QSettings()
+        settings.beginGroup(i18n.SETTINGS_GROUP)
+        suffix_val = (settings.value(SETTINGS_FORM_CLEAN_SUFFIX) or "").strip()
+        if isinstance(suffix_val, bool):
+            suffix_val = "_clean" if suffix_val else ""
+        self.suffix_edit.setText(suffix_val if suffix_val else "")
+        self.keep_flac_checkbox.setChecked(
+            bool(settings.value(SETTINGS_FORM_KEEP_FLAC, False))
+        )
+        out_dir = (settings.value(SETTINGS_OUTPUT_DIR) or "").strip()
+        if out_dir:
+            self.output_dir_edit.setText(out_dir)
+        settings.endGroup()
+
+    def _save_form_settings(self):
+        """Enregistre les réglages du formulaire dans QSettings (à la fermeture)."""
+        settings = QtCore.QSettings()
+        settings.beginGroup(i18n.SETTINGS_GROUP)
+        settings.setValue(SETTINGS_FORM_CLEAN_SUFFIX, self.suffix_edit.text().strip())
+        settings.setValue(SETTINGS_FORM_KEEP_FLAC, self.keep_flac_checkbox.isChecked())
+        settings.setValue(SETTINGS_OUTPUT_DIR, self.output_dir_edit.text().strip())
+        settings.endGroup()
+
     def closeEvent(self, event: QtGui.QCloseEvent):
+        self._save_form_settings()
         if self._ffmpeg_process and self._ffmpeg_process.state() != QtCore.QProcess.ProcessState.NotRunning:
             self._cancel_conversion(force=True)
         if self._uvr5_process and self._uvr5_process.state() != QtCore.QProcess.ProcessState.NotRunning:
@@ -2235,6 +2679,7 @@ class MainWindow(QtWidgets.QWidget):
             self._uvr5_process.waitForFinished(2000)
             if self._uvr5_output_dir and self._uvr5_output_dir.exists():
                 shutil.rmtree(self._uvr5_output_dir, ignore_errors=True)
+        self._cleanup_dpdf_temp()
         if self._vibe_process and self._vibe_process.state() != QtCore.QProcess.ProcessState.NotRunning:
             self._vibe_process.kill()
             self._vibe_process.waitForFinished(2000)
