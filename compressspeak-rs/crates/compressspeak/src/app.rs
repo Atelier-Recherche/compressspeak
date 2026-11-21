@@ -7,10 +7,11 @@ use crate::widgets::{
 };
 use cs_core::{
     data_dir, init_i18n, is_audio, set_language, spawn_convert, spawn_transcribe_only, tr,
-    AppConfig, ItemStatus, Language, PipelineEvent, PipelineHandle, QueueItem, ThemePref, APP_NAME,
+    AppConfig, CleanMode, ItemStatus, Language, PipelineEvent, PipelineHandle, QueueItem,
+    ThemePref, APP_NAME,
 };
 use cs_ffmpeg::{build_preview_command, ffmpeg_available, resolve_ffmpeg, run_command};
-use cs_uvr5::is_available as uvr5_available;
+use cs_uvr5::is_available as uvr5_available; // always true (native ONNX)
 use cs_whisper::{detection_status as whisper_detection_status, is_available as whisper_available};
 use eframe::App;
 use egui::{Align, Align2, Color32, Id, Layout, Order, RichText};
@@ -57,7 +58,7 @@ impl CompressSpeakApp {
         } else {
             app.log(tr("status.ffmpeg_missing"));
         }
-        if uvr5_available(&app.config.uvr5) {
+        if cs_uvr5::model_is_ready(app.config.uvr5.model_file()) {
             app.log(tr("status.uvr5_ok"));
         } else {
             app.log(tr("status.uvr5_missing"));
@@ -187,7 +188,7 @@ impl CompressSpeakApp {
         let any_dsp = self
             .queue
             .iter()
-            .any(|q| q.isolate || q.warmth || q.dpdf);
+            .any(|q| q.isolate || q.warmth || q.clean != CleanMode::Off);
         if any_dsp {
             return false;
         }
@@ -391,17 +392,20 @@ impl CompressSpeakApp {
                 BulkField::Isolate if uvr_ok => {
                     item.isolate = value;
                     if value {
-                        item.dpdf = false;
+                        item.clean = CleanMode::Off;
                     }
                 }
                 BulkField::Transcribe => item.transcribe = value,
                 BulkField::Warmth => item.warmth = value,
-                BulkField::Dpdf => {
-                    if !item.isolate {
-                        item.dpdf = value;
-                    }
-                }
                 _ => {}
+            }
+        }
+    }
+
+    fn bulk_set_clean(&mut self, mode: CleanMode) {
+        for item in &mut self.queue {
+            if !item.isolate {
+                item.clean = mode;
             }
         }
     }
@@ -444,6 +448,7 @@ impl CompressSpeakApp {
         let mut open_conversion = false;
         let mut open_warmth = false;
         let mut open_dpdf = false;
+        let mut open_inworld = false;
         let mut open_whisper = false;
         let mut open_uvr5 = false;
         let mut open_deps = false;
@@ -474,6 +479,10 @@ impl CompressSpeakApp {
                         }
                         if ui.button(tr("settings.dpdf")).clicked() {
                             open_dpdf = true;
+                            close_popup = true;
+                        }
+                        if ui.button(tr("settings.inworld")).clicked() {
+                            open_inworld = true;
                             close_popup = true;
                         }
                         if ui.button(tr("settings.whisper")).clicked() {
@@ -550,6 +559,9 @@ impl CompressSpeakApp {
         }
         if open_dpdf {
             self.settings.show_dpdf = true;
+        }
+        if open_inworld {
+            self.settings.show_inworld = true;
         }
         if open_whisper {
             self.settings.show_whisper = true;
@@ -645,7 +657,7 @@ impl CompressSpeakApp {
                                     let item = &mut self.queue[i];
                                     let r = toggle_switch(ui, &mut item.isolate, uvr_ok);
                                     if r.changed() && item.isolate {
-                                        item.dpdf = false;
+                                        item.clean = CleanMode::Off;
                                     }
                                 });
                             });
@@ -662,7 +674,7 @@ impl CompressSpeakApp {
                             queue_cell(ui, cols.toggle, |ui| {
                                 ui.vertical_centered(|ui| {
                                     let isolate = self.queue[i].isolate;
-                                    toggle_switch(ui, &mut self.queue[i].dpdf, !isolate);
+                                    clean_mode_combo(ui, &mut self.queue[i].clean, !isolate);
                                 });
                             });
                             queue_cell(ui, cols.del, |ui| {
@@ -723,11 +735,16 @@ impl CompressSpeakApp {
         let all_iso = self.queue.iter().all(|q| q.isolate);
         let all_tr = self.queue.iter().all(|q| q.transcribe);
         let all_w = self.queue.iter().all(|q| q.warmth);
-        let all_d = self.queue.iter().all(|q| q.dpdf);
+        let bulk_clean = self
+            .queue
+            .iter()
+            .find(|q| !q.isolate)
+            .map(|q| q.clean)
+            .unwrap_or(CleanMode::Off);
         let mut iso = all_iso;
         let mut tr_ = all_tr;
         let mut w = all_w;
-        let mut d = all_d;
+        let mut clean = bulk_clean;
 
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = cols.gap;
@@ -759,8 +776,8 @@ impl CompressSpeakApp {
             });
             queue_cell(ui, cols.toggle, |ui| {
                 ui.vertical_centered(|ui| {
-                    if toggle_switch(ui, &mut d, true).changed() {
-                        self.bulk_set(BulkField::Dpdf, d);
+                    if clean_mode_combo(ui, &mut clean, true).changed() {
+                        self.bulk_set_clean(clean);
                     }
                 });
             });
@@ -983,7 +1000,21 @@ enum BulkField {
     Isolate,
     Transcribe,
     Warmth,
-    Dpdf,
+}
+
+fn clean_mode_combo(ui: &mut egui::Ui, mode: &mut CleanMode, enabled: bool) -> egui::Response {
+    ui.add_enabled_ui(enabled, |ui| {
+        egui::ComboBox::from_id_salt(ui.id().with("clean_mode"))
+            .width(ui.available_width().max(64.0))
+            .selected_text(mode.label())
+            .show_ui(ui, |ui| {
+                ui.selectable_value(mode, CleanMode::Off, CleanMode::Off.label());
+                ui.selectable_value(mode, CleanMode::Dpdf, CleanMode::Dpdf.label());
+                ui.selectable_value(mode, CleanMode::Inworld, CleanMode::Inworld.label());
+            })
+            .response
+    })
+    .inner
 }
 
 /// Largeurs de colonnes partagées entre en-tête, « Tout » et lignes fichier.
@@ -1004,12 +1035,12 @@ impl QueueCols {
         let del = 28.0;
         let n_gaps = 7.0;
         let fixed_base = prog + gain + del + gap * n_gaps;
-        // 4 colonnes toggles : Isoler / Transcrire / Mixage / Nettoyer
-        let mut toggle = 76.0;
+        // 4 colonnes toggles : Isoler / Transcrire / Mixage / Nettoyer (combo)
+        let mut toggle = 88.0;
         let mut file = avail - fixed_base - toggle * 4.0;
         if file < 100.0 {
             let room = (avail - fixed_base - 100.0).max(0.0);
-            toggle = (room / 4.0).clamp(44.0, 76.0);
+            toggle = (room / 4.0).clamp(56.0, 88.0);
             file = (avail - fixed_base - toggle * 4.0).max(80.0);
         }
         // Ne jamais dépasser la largeur dispo (évite crop du cadre parent)

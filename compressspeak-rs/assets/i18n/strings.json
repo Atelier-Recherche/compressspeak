@@ -52,8 +52,49 @@
   "settings.conversion": { "fr": "Conversion Opus…", "en": "Opus conversion…", "de": "Opus-Konvertierung…", "es": "Conversión Opus…" },
   "settings.warmth": { "fr": "Mixage…", "en": "Mix…", "de": "Mix…", "es": "Mezcla…" },
   "settings.dpdf": { "fr": "DPDF (nettoyage)…", "en": "DPDF (clean)…", "de": "DPDF (Reinigung)…", "es": "DPDF (limpieza)…" },
+  "settings.inworld": { "fr": "Inworld (nettoyage)…", "en": "Inworld (clean)…", "de": "Inworld (Reinigung)…", "es": "Inworld (limpieza)…" },
+  "settings.inworld_title": { "fr": "Inworld Voice Isolator", "en": "Inworld Voice Isolator", "de": "Inworld Voice Isolator", "es": "Inworld Voice Isolator" },
+  "settings.inworld_blurb": {
+    "fr": "Débruitage offline 48 kHz (alternative à DPDF)",
+    "en": "Offline 48 kHz denoising (DPDF alternative)",
+    "de": "Offline-Entrauschung 48 kHz (DPDF-Alternative)",
+    "es": "Eliminación de ruido offline 48 kHz (alternativa a DPDF)"
+  },
+  "settings.inworld_hint": {
+    "fr": "Colonne Nettoyer → Inworld. Exclusif avec Isoler / DPDF. Modèle ONNX ~249 Mo au 1er usage.",
+    "en": "Clean column → Inworld. Exclusive with Isolate / DPDF. ONNX model ~249 MB on first use.",
+    "de": "Spalte Reinigen → Inworld. Exklusiv zu Isolieren / DPDF. ONNX-Modell ~249 MB beim ersten Mal.",
+    "es": "Columna Limpiar → Inworld. Exclusivo con Aislar / DPDF. Modelo ONNX ~249 MB en el primer uso."
+  },
+  "settings.inworld_ready": { "fr": "Modèle ONNX présent", "en": "ONNX model present", "de": "ONNX-Modell vorhanden", "es": "Modelo ONNX presente" },
+  "settings.inworld_missing": { "fr": "Modèle absent — téléchargez-le dans Dépendances", "en": "Model missing — download it in Dependencies", "de": "Modell fehlt — unter Abhängigkeiten laden", "es": "Modelo ausente — descárguelo en Dependencias" },
+  "settings.inworld_strength": { "fr": "Intensité", "en": "Strength", "de": "Stärke", "es": "Intensidad" },
+  "settings.inworld_strength_hint": {
+    "fr": "100 % = isolation complète. Baissez (ex. 60–80 %) si la voix est trop rongée.",
+    "en": "100% = full isolation. Lower (e.g. 60–80%) if the voice sounds eaten.",
+    "de": "100 % = volle Isolation. Senken (z. B. 60–80 %), wenn die Stimme leidet.",
+    "es": "100 % = aislamiento completo. Baje (p. ej. 60–80 %) si la voz se come."
+  },
+  "settings.inworld_protect": { "fr": "Protection voix (max. atténuation)", "en": "Voice protect (max attenuation)", "de": "Stimm-Schutz (max. Dämpfung)", "es": "Protección de voz (aten. máx.)" },
+  "settings.inworld_protect_hint": {
+    "fr": "0 = off. 6–12 dB empêche le modèle de creuser trop sous le niveau original.",
+    "en": "0 = off. 6–12 dB stops the model from digging too far below the original level.",
+    "de": "0 = aus. 6–12 dB verhindert zu starkes Absenken unter dem Originalpegel.",
+    "es": "0 = off. 6–12 dB evita que baje demasiado bajo el nivel original."
+  },
+  "settings.inworld_reset": { "fr": "Réinitialiser (75 % / 6 dB)", "en": "Reset (75% / 6 dB)", "de": "Zurücksetzen (75 % / 6 dB)", "es": "Restablecer (75 % / 6 dB)" },
   "settings.whisper": { "fr": "Transcription Whisper…", "en": "Whisper transcription…", "de": "Whisper-Transkription…", "es": "Transcripción Whisper…" },
-  "settings.uvr5": { "fr": "UVR5 (optionnel)…", "en": "UVR5 (optional)…", "de": "UVR5 (optional)…", "es": "UVR5 (opcional)…" },
+  "settings.uvr5": { "fr": "UVR MDX (isolation)…", "en": "UVR MDX (isolate)…", "de": "UVR MDX (isolieren)…", "es": "UVR MDX (aislar)…" },
+  "settings.uvr5_hint": {
+    "fr": "Séparation voix / accompagnement native (ONNX). Défaut : UVR-MDX-NET-Voc_FT.",
+    "en": "Native voice / accompaniment separation (ONNX). Default: UVR-MDX-NET-Voc_FT.",
+    "de": "Native Stimme/Begleitung-Trennung (ONNX). Standard: UVR-MDX-NET-Voc_FT.",
+    "es": "Separación nativa voz / acompañamiento (ONNX). Por defecto: UVR-MDX-NET-Voc_FT."
+  },
+  "settings.uvr5_model": { "fr": "Modèle ONNX", "en": "ONNX model", "de": "ONNX-Modell", "es": "Modelo ONNX" },
+  "settings.uvr5_stem": { "fr": "Stem", "en": "Stem", "de": "Stem", "es": "Stem" },
+  "settings.uvr5_ready": { "fr": "Modèle ONNX présent", "en": "ONNX model present", "de": "ONNX-Modell vorhanden", "es": "Modelo ONNX presente" },
+  "settings.uvr5_missing": { "fr": "Modèle absent — téléchargez-le dans Dépendances", "en": "Model missing — download it in Dependencies", "de": "Modell fehlt — unter Abhängigkeiten laden", "es": "Modelo ausente — descárguelo en Dependencias" },
   "settings.deps": { "fr": "Dépendances…", "en": "Dependencies…", "de": "Abhängigkeiten…", "es": "Dependencias…" },
   "deps.intro": {
     "fr": "Vérifiez l’état des composants et installez ce qui manque.",
@@ -77,14 +118,15 @@
   "deps.installing_whisper_cli": { "fr": "Téléchargement whisper-cli…", "en": "Downloading whisper-cli…", "de": "whisper-cli wird geladen…", "es": "Descargando whisper-cli…" },
   "deps.installing_model": { "fr": "Téléchargement modèle Whisper", "en": "Downloading Whisper model", "de": "Whisper-Modell laden", "es": "Descargando modelo Whisper" },
   "deps.installing_dpdf": { "fr": "Téléchargement modèle DPDF", "en": "Downloading DPDF model", "de": "DPDF-Modell laden", "es": "Descargando modelo DPDF" },
-  "deps.installing_uvr5": { "fr": "Installation audio-separator (pip)…", "en": "Installing audio-separator (pip)…", "de": "audio-separator (pip)…", "es": "Instalando audio-separator (pip)…" },
+  "deps.installing_inworld": { "fr": "Téléchargement Inworld Voice Isolator (~249 Mo)…", "en": "Downloading Inworld Voice Isolator (~249 MB)…", "de": "Inworld Voice Isolator (~249 MB)…", "es": "Descargando Inworld Voice Isolator (~249 MB)…" },
+  "deps.installing_uvr5": { "fr": "Téléchargement modèle UVR MDX", "en": "Downloading UVR MDX model", "de": "UVR-MDX-Modell laden", "es": "Descargando modelo UVR MDX" },
   "deps.busy": { "fr": "Installation en cours…", "en": "Installing…", "de": "Installation läuft…", "es": "Instalando…" },
   "settings.show_logs": { "fr": "Afficher le journal", "en": "Show log", "de": "Protokoll anzeigen", "es": "Mostrar registro" },
   "settings.close": { "fr": "Fermer", "en": "Close", "de": "Schließen", "es": "Cerrar" },
   "status.ffmpeg_ok": { "fr": "FFmpeg OK", "en": "FFmpeg OK", "de": "FFmpeg OK", "es": "FFmpeg OK" },
   "status.ffmpeg_missing": { "fr": "FFmpeg manquant", "en": "FFmpeg missing", "de": "FFmpeg fehlt", "es": "FFmpeg ausente" },
-  "status.uvr5_ok": { "fr": "UVR5 détecté", "en": "UVR5 detected", "de": "UVR5 erkannt", "es": "UVR5 detectado" },
-  "status.uvr5_missing": { "fr": "UVR5 non installé (optionnel)", "en": "UVR5 not installed (optional)", "de": "UVR5 nicht installiert (optional)", "es": "UVR5 no instalado (opcional)" },
+  "status.uvr5_ok": { "fr": "UVR MDX ONNX prêt", "en": "UVR MDX ONNX ready", "de": "UVR MDX ONNX bereit", "es": "UVR MDX ONNX listo" },
+  "status.uvr5_missing": { "fr": "UVR MDX : modèle à télécharger (Dépendances)", "en": "UVR MDX: download model in Dependencies", "de": "UVR MDX: Modell unter Abhängigkeiten laden", "es": "UVR MDX: descargue el modelo en Dependencias" },
   "status.whisper_ok": { "fr": "Transcription OK", "en": "Transcription OK", "de": "Transkription OK", "es": "Transcripción OK" },
   "status.whisper_missing": { "fr": "Moteur de transcription manquant", "en": "Transcription engine missing", "de": "Transkriptions-Engine fehlt", "es": "Motor de transcripción ausente" },
   "transcribe.none_checked": {
@@ -127,7 +169,7 @@
   "preset.podcast": { "fr": "Podcast", "en": "Podcast", "de": "Podcast", "es": "Podcast" },
   "preset.voice_chat": { "fr": "Voice Chat", "en": "Voice Chat", "de": "Voice Chat", "es": "Chat de voz" },
   "preset.voice_note": { "fr": "Note vocale", "en": "Voice note", "de": "Sprachnotiz", "es": "Nota de voz" },
-  "isolate.unavailable": { "fr": "Installez audio-separator pour isoler la voix", "en": "Install audio-separator to isolate vocals", "de": "audio-separator installieren", "es": "Instale audio-separator" },
+  "isolate.unavailable": { "fr": "Isolation ONNX toujours disponible", "en": "ONNX isolation always available", "de": "ONNX-Isolation immer verfügbar", "es": "Aislamiento ONNX siempre disponible" },
   "progress.waiting": { "fr": "En attente", "en": "Waiting", "de": "Warten", "es": "Esperando" },
   "progress.done": { "fr": "Terminé", "en": "Done", "de": "Fertig", "es": "Listo" },
   "progress.failed": { "fr": "Échec", "en": "Failed", "de": "Fehler", "es": "Falló" },

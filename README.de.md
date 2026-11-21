@@ -45,8 +45,9 @@
 ## Funktionen
 
 - **Opus-Kompression** über FFmpeg (afftdn-Rauschreduktion + Dynamikkompressor)
-- **Optionale Stimmisolation** (UVR5 / `audio-separator`, externes CLI)
+- **Native Stimmisolation** (UVR MDX-Net / ONNX Runtime, Voc_FT ~67 MB beim ersten Mal)
 - **Eingebettete DPDF-Reinigung** (DPDFNet / ONNX Runtime)
+- **Optionale Inworld-Reinigung** (Voice Isolator offline / ONNX Runtime, ~249 MB beim ersten Mal)
 - **Eingebetteter Mix** (Rust-DSP: Wärme + Entdämpfung nach DPDF)
 - **Transkription** über `whisper-cli` (ggml-Modelle)
 - **Warteschlange**, integrierter Player, 5-s-Vorschau
@@ -58,7 +59,7 @@
 
 - **Rust** stable (1.85+)
 - **FFmpeg** im `PATH` oder gebündelt über `fetch-ffmpeg`
-- Optional: [`audio-separator`](https://github.com/nomadkaraoke/python-audio-separator) (UVR5), [`whisper-cli`](https://github.com/ggerganov/whisper.cpp)
+- Optional: [`whisper-cli`](https://github.com/ggerganov/whisper.cpp)
 
 ### Linux (UI-Abhängigkeiten)
 

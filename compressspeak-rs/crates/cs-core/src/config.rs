@@ -1,5 +1,6 @@
 use cs_dpdf::DpdfParams;
 use cs_ffmpeg::ConversionParams;
+use cs_inworld::InworldParams;
 use cs_uvr5::Uvr5Params;
 use cs_warmth::WarmthParams;
 use cs_whisper::{TranscriptFormat, WhisperParams};
@@ -55,6 +56,8 @@ pub struct AppConfig {
     pub conversion: ConversionParams,
     pub warmth: WarmthParams,
     pub dpdf: DpdfParams,
+    #[serde(default)]
+    pub inworld: InworldParams,
     pub whisper: WhisperParams,
     pub uvr5: Uvr5Params,
     pub clean_suffix: String,
@@ -74,6 +77,7 @@ impl Default for AppConfig {
             conversion: ConversionParams::default(),
             warmth: WarmthParams::default(),
             dpdf: DpdfParams::default(),
+            inworld: InworldParams::default(),
             whisper: WhisperParams {
                 model: "small".into(),
                 language: "french".into(),
@@ -94,12 +98,16 @@ impl AppConfig {
     pub fn load() -> Self {
         let mut cfg: Self = confy::load(ORG, Some("config")).unwrap_or_default();
         cfg.dpdf.normalize();
+        cfg.inworld.normalize();
+        cfg.uvr5.normalize();
         cfg
     }
 
     pub fn save(&self) -> Result<(), confy::ConfyError> {
         let mut cfg = self.clone();
         cfg.dpdf.normalize();
+        cfg.inworld.normalize();
+        cfg.uvr5.normalize();
         confy::store(ORG, Some("config"), cfg)
     }
 }

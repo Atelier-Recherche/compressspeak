@@ -5,6 +5,7 @@ members = [
     "crates/cs-ffmpeg",
     "crates/cs-warmth",
     "crates/cs-dpdf",
+    "crates/cs-inworld",
     "crates/cs-whisper",
     "crates/cs-uvr5",
     "crates/compressspeak",
@@ -43,5 +44,6 @@ cs-core = { path = "crates/cs-core" }
 cs-ffmpeg = { path = "crates/cs-ffmpeg" }
 cs-warmth = { path = "crates/cs-warmth" }
 cs-dpdf = { path = "crates/cs-dpdf" }
+cs-inworld = { path = "crates/cs-inworld" }
 cs-whisper = { path = "crates/cs-whisper" }
 cs-uvr5 = { path = "crates/cs-uvr5" }

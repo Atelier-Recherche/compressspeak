@@ -3,11 +3,17 @@ name = "cs-uvr5"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "UVR MDX-Net vocal separation via ONNX Runtime (no Python)"
 
 [dependencies]
 thiserror = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true }
-which = { workspace = true }
+hound = { workspace = true }
+directories = { workspace = true }
 cs-ffmpeg = { workspace = true }
 tempfile = { workspace = true }
+ureq = { workspace = true }
+rustfft = "6"
+parking_lot = { workspace = true }
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "ndarray", "download-binaries", "tls-rustls"] }

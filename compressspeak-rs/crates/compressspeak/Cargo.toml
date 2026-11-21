@@ -26,5 +26,6 @@ cs-core = { workspace = true }
 cs-ffmpeg = { workspace = true }
 cs-warmth = { workspace = true }
 cs-dpdf = { workspace = true }
+cs-inworld = { workspace = true }
 cs-whisper = { workspace = true }
 cs-uvr5 = { workspace = true }

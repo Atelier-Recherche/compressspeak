@@ -45,9 +45,10 @@
 ## Fonctionnalités
 
 - **Compression Opus** via FFmpeg (réduction de bruit afftdn + compresseur dynamique)
-- **Isolation vocale** optionnelle (UVR5 / `audio-separator`, CLI externe)
+- **Isolation vocale** native (UVR MDX-Net / ONNX Runtime, modèle Voc_FT ~67 Mo au 1er usage)
 - **Nettoyage DPDF** embarqué (DPDFNet / ONNX Runtime)
-- **Mixage** embarqué (DSP Rust : chaleur + désourdage après DPDF)
+- **Nettoyage Inworld** optionnel (Voice Isolator offline / ONNX Runtime, ~249 Mo au 1er usage)
+- **Mixage** embarqué (DSP Rust : chaleur + désourdage après nettoyage)
 - **Transcription** via `whisper-cli` (modèles ggml)
 - **File d’attente** par lots, lecteur intégré, aperçu 5 s
 - **Thèmes** sombre / clair / système, **i18n** fr / en / de / es
@@ -58,7 +59,7 @@
 
 - **Rust** stable (1.85+)
 - **FFmpeg** dans le `PATH`, ou embarqué via les scripts `fetch-ffmpeg`
-- Optionnel : [`audio-separator`](https://github.com/nomadkaraoke/python-audio-separator) (UVR5), [`whisper-cli`](https://github.com/ggerganov/whisper.cpp) (transcription)
+- Optionnel : [`whisper-cli`](https://github.com/ggerganov/whisper.cpp) (transcription)
 
 ### Linux (dépendances UI)
 
@@ -112,7 +113,7 @@ cargo build --release -p compressspeak
 - **Mixage** : presets + désourdage optionnel (après DPDF)
 - **DPDF** : sample rate + modèle (Baseline / DPDFNet2 / 4 / 8)
 - **Whisper** : chemin CLI, modèle, langue, format (txt / srt / vtt)
-- **UVR5** : chemin CLI / modèle (sinon « Isoler » reste désactivé)
+- **UVR MDX** : modèle ONNX (Voc_FT / Kim / Inst_HQ_4) ; téléchargé au 1er usage
 - **Journal** : masqué par défaut, activable dans Paramètres
 
 ---
@@ -145,9 +146,9 @@ compressspeak/
 2. Paramètres → Transcription Whisper… → chemin CLI + modèle
 3. Les modèles `ggml-*.bin` sont téléchargés dans le dossier data de l’app
 
-## UVR5
+## UVR MDX (Isoler)
 
-Non embarqué. Installez `audio-separator` et indiquez le chemin dans Paramètres → UVR5.
+Natif ONNX (pas de Python). Modèle par défaut `UVR-MDX-NET-Voc_FT.onnx` (~67 Mo), téléchargé via Dépendances ou au premier Isoler.
 
 ---
 
@@ -157,9 +158,9 @@ Non embarqué. Installez `audio-separator` et indiquez le chemin dans Paramètre
 
 Installez FFmpeg (`winget install ffmpeg` sous Windows) ou lancez `scripts/fetch-ffmpeg` dans `compressspeak-rs/`.
 
-### Isolation désactivée
+### Isoler / modèle UVR
 
-UVR5 / `audio-separator` non détecté : installez le CLI et configurez le chemin dans Paramètres.
+Téléchargez le modèle ONNX dans Paramètres → Dépendances si le premier Isoler échoue.
 
 ### Transcription
 
@@ -188,8 +189,10 @@ Les chaînes UI sont dans `compressspeak-rs/assets/i18n/strings.json`.
 - **FFmpeg** — compression Opus
 - **egui / eframe** — interface
 - **ONNX Runtime** / **Ceva DPDFNet** — nettoyage
+- **Inworld Voice Isolator** (ONNX via mrfakename) — nettoyage alternatif
 - **whisper.cpp** — transcription
-- **audio-separator** / **UVR5** — isolation vocale (optionnel)
+- **UVR MDX-Net** (ONNX) — isolation vocale
+- **Ultimate Vocal Remover** — modèles MDX d’origine
 
 ---
 

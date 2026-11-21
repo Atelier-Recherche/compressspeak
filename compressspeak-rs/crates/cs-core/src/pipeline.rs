@@ -1,14 +1,15 @@
 //! Conversion / transcription pipeline orchestration.
 
 use crate::config::{data_dir, AppConfig};
-use crate::queue::{ItemStatus, QueueItem};
+use crate::queue::{CleanMode, ItemStatus, QueueItem};
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use cs_dpdf::apply_dpdf;
 use cs_ffmpeg::{
     build_convert_command, ffmpeg_available, probe_duration_sec, resolve_ffmpeg,
     run_command_with_progress,
 };
-use cs_uvr5::{is_available as uvr5_available, separate_vocals};
+use cs_inworld::apply_inworld;
+use cs_uvr5::separate_vocals;
 use cs_warmth::apply_warmth;
 use cs_whisper::transcribe;
 use std::path::{Path, PathBuf};
@@ -166,13 +167,8 @@ fn do_convert(
     let tmp = tempfile::tempdir().map_err(|e| PipelineError::Msg(e.to_string()))?;
 
     if item.isolate {
-        if !uvr5_available(&config.uvr5) {
-            return Err(PipelineError::Msg(
-                "UVR5 / audio-separator non disponible (installez le CLI)".into(),
-            ));
-        }
         let _ = tx.send(PipelineEvent::Log(format!(
-            "UVR5: {}",
+            "UVR MDX: {}",
             item.display_name()
         )));
         let stem = separate_vocals(&work, tmp.path(), &config.uvr5, Some(data))
@@ -183,15 +179,24 @@ fn do_convert(
             let _ = tx.send(PipelineEvent::Log(format!("FLAC conservé: {}", dest.display())));
         }
         work = stem;
-    } else if item.dpdf {
+    } else if item.clean == CleanMode::Dpdf {
         let _ = tx.send(PipelineEvent::Log(format!("DPDF: {}", item.display_name())));
         let out = tmp.path().join("dpdf.wav");
         apply_dpdf(&work, &out, &config.dpdf, Some(data))
             .map_err(|e| PipelineError::Msg(e.to_string()))?;
         work = out;
+    } else if item.clean == CleanMode::Inworld {
+        let _ = tx.send(PipelineEvent::Log(format!(
+            "Inworld: {}",
+            item.display_name()
+        )));
+        let out = tmp.path().join("inworld.wav");
+        apply_inworld(&work, &out, &config.inworld, Some(data))
+            .map_err(|e| PipelineError::Msg(e.to_string()))?;
+        work = out;
     }
 
-    // Mixage après DPDF / UVR (désourdage + chaleur) — ordre voulu
+    // Mixage après nettoyage / UVR (désourdage + chaleur) — ordre voulu
     if item.warmth {
         let _ = tx.send(PipelineEvent::Log(format!(
             "Mixage: {}",

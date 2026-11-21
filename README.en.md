@@ -44,8 +44,9 @@
 ## Features
 
 - **Opus compression** via FFmpeg (afftdn noise reduction + dynamic compressor)
-- **Optional voice isolation** (UVR5 / `audio-separator`, external CLI)
+- **Native voice isolation** (UVR MDX-Net / ONNX Runtime, Voc_FT model ~67 MB on first use)
 - **Embedded DPDF cleaning** (DPDFNet / ONNX Runtime)
+- **Optional Inworld cleaning** (Voice Isolator offline / ONNX Runtime, ~249 MB on first use)
 - **Embedded Mix** (Rust DSP: warmth + unmuffle after DPDF)
 - **Transcription** via `whisper-cli` (ggml models)
 - **Batch queue**, built-in player, 5 s preview
@@ -57,7 +58,7 @@
 
 - **Rust** stable (1.85+)
 - **FFmpeg** on `PATH`, or bundled via `fetch-ffmpeg` scripts
-- Optional: [`audio-separator`](https://github.com/nomadkaraoke/python-audio-separator) (UVR5), [`whisper-cli`](https://github.com/ggerganov/whisper.cpp) (transcription)
+- Optional: [`whisper-cli`](https://github.com/ggerganov/whisper.cpp) (transcription)
 
 ### Linux (UI deps)
 
@@ -111,7 +112,7 @@ cargo build --release -p compressspeak
 - **Mix** — presets + optional unmuffle (after DPDF)
 - **DPDF** — sample rate + model (Baseline / DPDFNet2 / 4 / 8)
 - **Whisper** — CLI path, model, language, format (txt / srt / vtt)
-- **UVR5** — CLI / model path (otherwise Isolate stays disabled)
+- **UVR MDX** — ONNX model (Voc_FT / Kim / Inst_HQ_4); downloads on first use
 - **Log** — hidden by default; enable in Settings
 
 ---
@@ -144,9 +145,9 @@ compressspeak/
 2. Settings → Whisper transcription… → CLI path + model
 3. `ggml-*.bin` models are downloaded into the app data directory
 
-## UVR5
+## UVR MDX (Isolate)
 
-Not bundled. Install `audio-separator` and set the path in Settings → UVR5.
+Native ONNX (no Python). Default model `UVR-MDX-NET-Voc_FT.onnx` (~67 MB) downloads from Dependencies or on first Isolate run.
 
 ---
 
@@ -156,9 +157,9 @@ Not bundled. Install `audio-separator` and set the path in Settings → UVR5.
 
 Install FFmpeg (`winget install ffmpeg` on Windows) or run `scripts/fetch-ffmpeg` in `compressspeak-rs/`.
 
-### Isolate disabled
+### Isolate / UVR model
 
-UVR5 / `audio-separator` not found — install the CLI and configure the path in Settings.
+Download the ONNX model in Settings → Dependencies if the first Isolate run fails.
 
 ### Transcription
 
@@ -188,7 +189,7 @@ UI strings live in `compressspeak-rs/assets/i18n/strings.json`.
 - **egui / eframe** — UI
 - **ONNX Runtime** / **Ceva DPDFNet** — cleaning
 - **whisper.cpp** — transcription
-- **audio-separator** / **UVR5** — optional isolation
+- **UVR MDX-Net** (ONNX) — voice isolation
 
 ---
 

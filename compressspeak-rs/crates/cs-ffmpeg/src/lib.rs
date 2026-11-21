@@ -377,6 +377,32 @@ pub fn build_mono_wav_command(
     ]
 }
 
+/// Decode / resample to stereo PCM WAV (UVR MDX-Net expects 44.1 kHz stereo).
+pub fn build_stereo_wav_command(
+    ffmpeg: &Path,
+    input: &Path,
+    output_wav: &Path,
+    sample_rate: u32,
+) -> Vec<String> {
+    vec![
+        ffmpeg.to_string_lossy().into(),
+        "-hide_banner".into(),
+        "-loglevel".into(),
+        "error".into(),
+        "-y".into(),
+        "-i".into(),
+        input.to_string_lossy().into(),
+        "-vn".into(),
+        "-ac".into(),
+        "2".into(),
+        "-ar".into(),
+        sample_rate.to_string(),
+        "-c:a".into(),
+        "pcm_s16le".into(),
+        output_wav.to_string_lossy().into(),
+    ]
+}
+
 pub fn parse_progress_from_output(text: &str, duration_sec: f64) -> Option<u8> {
     if duration_sec <= 0.0 {
         return None;

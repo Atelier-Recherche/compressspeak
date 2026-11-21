@@ -763,13 +763,14 @@ dependencies = [
 
 [[package]]
 name = "compressspeak"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "crossbeam-channel",
  "cs-core",
  "cs-dpdf",
  "cs-ffmpeg",
+ "cs-inworld",
  "cs-uvr5",
  "cs-warmth",
  "cs-whisper",
@@ -975,13 +976,14 @@ dependencies = [
 
 [[package]]
 name = "cs-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "confy",
  "crossbeam-channel",
  "cs-dpdf",
  "cs-ffmpeg",
+ "cs-inworld",
  "cs-uvr5",
  "cs-warmth",
  "cs-whisper",
@@ -995,7 +997,7 @@ dependencies = [
 
 [[package]]
 name = "cs-dpdf"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "cs-ffmpeg",
  "directories 6.0.0",
@@ -1012,7 +1014,7 @@ dependencies = [
 
 [[package]]
 name = "cs-ffmpeg"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "directories 6.0.0",
  "regex",
@@ -1025,20 +1027,42 @@ dependencies = [
 ]
 
 [[package]]
-name = "cs-uvr5"
-version = "0.1.0"
+name = "cs-inworld"
+version = "0.1.1"
 dependencies = [
  "cs-ffmpeg",
+ "directories 6.0.0",
+ "hound",
+ "ort",
+ "parking_lot",
+ "rustfft",
  "serde",
  "tempfile",
  "thiserror 2.0.21",
  "tracing",
- "which",
+ "ureq",
+]
+
+[[package]]
+name = "cs-uvr5"
+version = "0.1.1"
+dependencies = [
+ "cs-ffmpeg",
+ "directories 6.0.0",
+ "hound",
+ "ort",
+ "parking_lot",
+ "rustfft",
+ "serde",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tracing",
+ "ureq",
 ]
 
 [[package]]
 name = "cs-warmth"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "hound",
  "serde",
@@ -1049,7 +1073,7 @@ dependencies = [
 
 [[package]]
 name = "cs-whisper"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "cs-ffmpeg",
  "directories 6.0.0",

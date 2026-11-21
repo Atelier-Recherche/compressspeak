@@ -1,7 +1,11 @@
 use cs_core::{data_dir, tr, AppConfig};
 use cs_dpdf::{model_labels_for_sr, SAMPLE_RATES};
 use cs_ffmpeg::{ffmpeg_available, ConversionParams};
-use cs_uvr5::{is_available as uvr5_available, AVAILABLE_STEMS};
+use cs_inworld::{model_is_ready as inworld_model_ready, models_dir as inworld_models_dir};
+use cs_uvr5::{
+    model_is_ready as uvr_model_ready, models_dir as uvr_models_dir, AVAILABLE_MODELS,
+    AVAILABLE_STEMS,
+};
 use cs_warmth::WarmthParams;
 use cs_whisper::{
     detection_status, is_available as whisper_available, list_discovered_models,
@@ -17,7 +21,8 @@ enum DepsJob {
     WhisperCli,
     WhisperModel(String),
     DpdfModel(String),
-    Uvr5Pip,
+    InworldModel,
+    Uvr5Model(String),
 }
 
 enum DepsEvent {
@@ -28,6 +33,7 @@ pub struct SettingsUi {
     pub show_conversion: bool,
     pub show_warmth: bool,
     pub show_dpdf: bool,
+    pub show_inworld: bool,
     pub show_whisper: bool,
     pub show_uvr5: bool,
     pub show_deps: bool,
@@ -42,6 +48,7 @@ impl Default for SettingsUi {
             show_conversion: false,
             show_warmth: false,
             show_dpdf: false,
+            show_inworld: false,
             show_whisper: false,
             show_uvr5: false,
             show_deps: false,
@@ -58,6 +65,7 @@ impl SettingsUi {
         self.conversion(ctx, config);
         self.warmth(ctx, config);
         self.dpdf(ctx, config);
+        self.inworld(ctx, config);
         self.whisper(ctx, config);
         self.uvr5(ctx, config);
         self.dependencies(ctx, config);
@@ -96,7 +104,8 @@ impl SettingsUi {
             DepsJob::WhisperCli => tr("deps.installing_whisper_cli").to_string(),
             DepsJob::WhisperModel(m) => format!("{} ({m})…", tr("deps.installing_model")),
             DepsJob::DpdfModel(m) => format!("{} ({m})…", tr("deps.installing_dpdf")),
-            DepsJob::Uvr5Pip => tr("deps.installing_uvr5").to_string(),
+            DepsJob::InworldModel => tr("deps.installing_inworld").to_string(),
+            DepsJob::Uvr5Model(m) => format!("{} ({m})…", tr("deps.installing_uvr5")),
         };
         let (tx, rx) = unbounded();
         self.deps_rx = Some(rx);
@@ -114,7 +123,12 @@ impl SettingsUi {
                 DepsJob::DpdfModel(m) => cs_dpdf::ensure_model(&m)
                     .map(|p| format!("DPDF → {}", p.display()))
                     .map_err(|e| e.to_string()),
-                DepsJob::Uvr5Pip => cs_uvr5::install_via_pip().map_err(|e| e.to_string()),
+                DepsJob::InworldModel => cs_inworld::ensure_model()
+                    .map(|p| format!("Inworld → {}", p.display()))
+                    .map_err(|e| e.to_string()),
+                DepsJob::Uvr5Model(m) => cs_uvr5::ensure_model(&m)
+                    .map(|p| format!("UVR MDX → {}", p.display()))
+                    .map_err(|e| e.to_string()),
             };
             let _ = match result {
                 Ok(msg) => tx.send(DepsEvent::Done { ok: true, msg }),
@@ -153,7 +167,16 @@ impl SettingsUi {
         let ow = openwhispr_install_dir().is_some() || openwhispr_models_dir().is_some();
         let vibe = vibe_install_dir().is_some();
         let models = list_discovered_models();
-        let uvr_ok = uvr5_available(&config.uvr5);
+        let uvr_model = config.uvr5.model_file().to_string();
+        let uvr_ok = uvr_model_ready(&uvr_model);
+        let uvr_detail = if uvr_ok {
+            uvr_models_dir().join(&uvr_model).display().to_string()
+        } else {
+            format!(
+                "absent (~67 Mo) — {}",
+                uvr_models_dir().join(&uvr_model).display()
+            )
+        };
         let dpdf_model = config.dpdf.model_id();
         let dpdf_local = cs_dpdf::find_local_model(&dpdf_model);
         let dpdf_ok = dpdf_local.is_some();
@@ -168,6 +191,18 @@ impl SettingsUi {
                         .display()
                 )
             });
+        let inworld_ok = inworld_model_ready();
+        let inworld_detail = if inworld_ok {
+            inworld_models_dir()
+                .join(cs_inworld::MODEL_FILE)
+                .display()
+                .to_string()
+        } else {
+            format!(
+                "absent (~249 Mo) — {}",
+                inworld_models_dir().join(cs_inworld::MODEL_FILE).display()
+            )
+        };
         let busy = self.deps_busy;
         let status = self.deps_status.clone();
         let whisper_model = config.whisper.model.clone();
@@ -176,6 +211,7 @@ impl SettingsUi {
         let mut do_whisper_cli = false;
         let mut do_whisper_model = false;
         let mut do_dpdf = false;
+        let mut do_inworld = false;
         let mut do_uvr5 = false;
         let mut open_vibe = false;
         let mut open_ow = false;
@@ -312,14 +348,22 @@ impl SettingsUi {
 
                 if row(
                     ui,
-                    "UVR5 / audio-separator",
+                    "Inworld Voice Isolator",
+                    inworld_ok,
+                    &inworld_detail,
+                    tr("deps.download"),
+                    true,
+                ) {
+                    do_inworld = true;
+                }
+
+                let uvr_title = format!("UVR MDX ({uvr_model})");
+                if row(
+                    ui,
+                    &uvr_title,
                     uvr_ok,
-                    if uvr_ok {
-                        "détecté"
-                    } else {
-                        "optionnel — isolation de voix"
-                    },
-                    tr("deps.install_pip"),
+                    &uvr_detail,
+                    tr("deps.download"),
                     true,
                 ) {
                     do_uvr5 = true;
@@ -393,8 +437,11 @@ impl SettingsUi {
         if do_dpdf {
             self.start_deps_job(DepsJob::DpdfModel(dpdf_model));
         }
+        if do_inworld {
+            self.start_deps_job(DepsJob::InworldModel);
+        }
         if do_uvr5 {
-            self.start_deps_job(DepsJob::Uvr5Pip);
+            self.start_deps_job(DepsJob::Uvr5Model(uvr_model));
         }
         if open_ow {
             Self::open_url("https://www.openwhispr.com/");
@@ -648,6 +695,105 @@ impl SettingsUi {
         self.show_dpdf = open;
     }
 
+    fn inworld(&mut self, ctx: &Context, config: &mut AppConfig) {
+        let mut open = self.show_inworld;
+        config.inworld.normalize();
+        let ready = inworld_model_ready();
+        egui::Window::new(tr("settings.inworld_title"))
+            .id(Id::new("cs_settings_inworld"))
+            .open(&mut open)
+            .resizable(true)
+            .default_width(420.0)
+            .show(ctx, |ui| {
+                ui.label(
+                    RichText::new(tr("settings.inworld_blurb"))
+                        .strong()
+                        .size(14.0),
+                );
+                ui.label(
+                    RichText::new(tr("settings.inworld_hint"))
+                        .weak()
+                        .small(),
+                );
+                ui.add_space(8.0);
+
+                ui.label(RichText::new(tr("settings.inworld_strength")).strong());
+                ui.add(
+                    egui::Slider::new(&mut config.inworld.strength, 0.0..=1.0)
+                        .custom_formatter(|v, _| format!("{:.0}%", v * 100.0))
+                        .custom_parser(|s| {
+                            let t = s.trim().trim_end_matches('%');
+                            t.parse::<f64>().ok().map(|v| {
+                                if v > 1.0 {
+                                    v / 100.0
+                                } else {
+                                    v
+                                }
+                            })
+                        }),
+                );
+                ui.label(
+                    RichText::new(tr("settings.inworld_strength_hint"))
+                        .weak()
+                        .small(),
+                );
+
+                ui.add_space(8.0);
+                ui.label(RichText::new(tr("settings.inworld_protect")).strong());
+                ui.add(
+                    egui::Slider::new(&mut config.inworld.voice_protect_db, 0.0..=24.0)
+                        .suffix(" dB")
+                        .logarithmic(false),
+                );
+                ui.label(
+                    RichText::new(tr("settings.inworld_protect_hint"))
+                        .weak()
+                        .small(),
+                );
+
+                ui.add_space(8.0);
+                if ui.button(tr("settings.inworld_reset")).clicked() {
+                    config.inworld = cs_inworld::InworldParams::default();
+                }
+
+                ui.separator();
+                ui.label(
+                    RichText::new(format!(
+                        "Modèle : {} @ 48 kHz",
+                        cs_inworld::MODEL_FILE
+                    ))
+                    .monospace()
+                    .small(),
+                );
+                ui.label(
+                    RichText::new(format!("Dossier : {}", inworld_models_dir().display()))
+                        .monospace()
+                        .small()
+                        .weak(),
+                );
+                ui.add_space(6.0);
+                if ready {
+                    ui.label(
+                        RichText::new(tr("settings.inworld_ready"))
+                            .color(Color32::from_rgb(80, 180, 100)),
+                    );
+                } else {
+                    ui.label(
+                        RichText::new(tr("settings.inworld_missing"))
+                            .color(Color32::from_rgb(200, 140, 40)),
+                    );
+                }
+                ui.add_space(4.0);
+                ui.label(
+                    RichText::new(
+                        "✓ ONNX Runtime natif — conversion mrfakename/voice-isolator-onnx (Apache-2.0)",
+                    )
+                    .color(Color32::from_rgb(80, 180, 100)),
+                );
+            });
+        self.show_inworld = open;
+    }
+
     fn whisper(&mut self, ctx: &Context, config: &mut AppConfig) {
         let mut open = self.show_whisper;
         egui::Window::new(tr("settings.whisper"))
@@ -734,32 +880,59 @@ impl SettingsUi {
 
     fn uvr5(&mut self, ctx: &Context, config: &mut AppConfig) {
         let mut open = self.show_uvr5;
+        config.uvr5.normalize();
+        let model_file = config.uvr5.model_file().to_string();
+        let ready = uvr_model_ready(&model_file);
         egui::Window::new(tr("settings.uvr5"))
             .id(Id::new("cs_settings_uvr5"))
             .open(&mut open)
+            .default_width(460.0)
             .show(ctx, |ui| {
-                ui.label(tr("isolate.unavailable"));
-                ui.horizontal(|ui| {
-                    ui.label("path / CLI");
-                    ui.text_edit_singleline(&mut config.uvr5.path);
-                    if ui.button(tr("btn.choose")).clicked() {
-                        if let Some(p) = rfd::FileDialog::new().pick_folder() {
-                            config.uvr5.path = p.display().to_string();
+                ui.label(
+                    RichText::new(tr("settings.uvr5_hint"))
+                        .weak()
+                        .small(),
+                );
+                ui.add_space(6.0);
+                ui.label(RichText::new(tr("settings.uvr5_model")).strong());
+                egui::ComboBox::from_id_salt("uvr_onnx_model")
+                    .selected_text(&config.uvr5.model)
+                    .width(320.0)
+                    .show_ui(ui, |ui| {
+                        for m in AVAILABLE_MODELS {
+                            ui.selectable_value(&mut config.uvr5.model, (*m).to_string(), *m);
                         }
-                    }
-                });
-                ui.horizontal(|ui| {
-                    ui.label("model");
-                    ui.text_edit_singleline(&mut config.uvr5.model);
-                });
-                egui::ComboBox::from_label("stem")
+                    });
+                egui::ComboBox::from_label(tr("settings.uvr5_stem"))
                     .selected_text(&config.uvr5.stem)
                     .show_ui(ui, |ui| {
                         for s in AVAILABLE_STEMS {
                             ui.selectable_value(&mut config.uvr5.stem, (*s).to_string(), *s);
                         }
                     });
-                ui.add(egui::Slider::new(&mut config.uvr5.chunk_sec, 60..=3600).text("chunk sec"));
+                ui.add_space(8.0);
+                ui.label(
+                    RichText::new(format!("Dossier : {}", uvr_models_dir().display()))
+                        .monospace()
+                        .small()
+                        .weak(),
+                );
+                if ready {
+                    ui.label(
+                        RichText::new(tr("settings.uvr5_ready"))
+                            .color(Color32::from_rgb(80, 180, 100)),
+                    );
+                } else {
+                    ui.label(
+                        RichText::new(tr("settings.uvr5_missing"))
+                            .color(Color32::from_rgb(200, 140, 40)),
+                    );
+                }
+                ui.add_space(4.0);
+                ui.label(
+                    RichText::new("✓ ONNX Runtime natif — MDX-Net UVR (pas de Python)")
+                        .color(Color32::from_rgb(80, 180, 100)),
+                );
             });
         self.show_uvr5 = open;
     }
